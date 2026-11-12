@@ -16,6 +16,8 @@ final class BoardScene {
     let cameraNode = SCNNode()
     let boardNode = SCNNode()
     let piecesNode = SCNNode()
+    /// Persistent oil/scorch marks from kills; wiped when the board is back to a full set.
+    let scarsNode = SCNNode()
     private(set) var pieces: [Square: SCNNode] = [:]
     private var overlays: [SCNNode] = []
     private var dots: [SCNNode] = []
@@ -39,6 +41,7 @@ final class BoardScene {
         let attackerYaw: CGFloat
         var fx: [SCNNode] = []
         var completion: (() -> Void)?
+        var carnage = 0
         let driver = SCNNode()
         init(plan: BattlePlan, attacker: SCNNode, victim: SCNNode, victimKeeps: Bool, target: SCNVector3, attackerYaw: CGFloat) {
             self.plan = plan; self.attacker = attacker; self.victim = victim; self.victimKeeps = victimKeeps
@@ -66,6 +69,7 @@ final class BoardScene {
         scene.lightingEnvironment.intensity = 1.2
         scene.rootNode.addChildNode(boardNode)
         scene.rootNode.addChildNode(piecesNode)
+        scene.rootNode.addChildNode(scarsNode)
 
         let camera = SCNCamera()
         camera.fieldOfView = 38
@@ -245,6 +249,9 @@ final class BoardScene {
     /// Makes the scene match `position` (used at load, undo, and after every move as a safety net).
     func sync(_ position: Position) {
         guard battle == nil else { return }
+        if (0..<64).filter({ position.piece(at: $0) != nil }).count == 32 {   // full set = new game or undone to start
+            scarsNode.childNodes.forEach { $0.removeFromParentNode() }
+        }
         for s in 0..<64 {
             let want = position.piece(at: s)
             if let node = pieces[s] {
@@ -436,6 +443,7 @@ final class BoardScene {
         let b = ActiveBattle(plan: plan, attacker: attacker, victim: victim, victimKeeps: victimKeeps, target: home,
                              attackerYaw: Self.baseYaw(attackerSide))
         b.completion = completion
+        b.carnage = prefs.carnage
         battle = b
         scene.rootNode.addChildNode(b.driver)
         let pal = FactionPalette.of(attackerSide), vpal = FactionPalette.of(attackerSide.opposite)
@@ -537,7 +545,7 @@ final class BoardScene {
     private func spark(_ b: ActiveBattle, at p: SCNVector3, color: NSColor, count: CGFloat = 160, speed: CGFloat = 2.2) {
         let n = SCNNode()
         n.position = p
-        n.addParticleSystem(Effects.burst(color: color, count: count, speed: speed))
+        n.addParticleSystem(Effects.burst(color: color, count: count * [1, 1.5, 2.2][b.carnage], speed: speed * [1, 1.15, 1.3][b.carnage]))
         addFX(n, to: b)
     }
 
@@ -629,6 +637,7 @@ final class BoardScene {
         let v = b.victim
         let center = SCNVector3(V.x, 0.55, V.z)
         let vanish = SCNAction.sequence([.fadeOut(duration: d * 0.3), .run { n in n.isHidden = true }])
+        carnageImpact(b, at: V, dir: dir, duration: d)
         switch b.plan.defeat {
         case .popSparks:
             v.runAction(.sequence([.scale(to: 1.25, duration: d * 0.15), .group([.scale(to: 0.01, duration: d * 0.15), .fadeOut(duration: d * 0.15)]),
@@ -715,6 +724,96 @@ final class BoardScene {
         }
     }
 
+    /// Kill-moment violence layered on the pair's own defeat: hit flash, screen shake, hydraulic-fluid spray, torn-off
+    /// parts and a scorch mark that stays on the board. Scales with Settings › Carnage (0 = off).
+    private func carnageImpact(_ b: ActiveBattle, at V: SCNVector3, dir: SCNVector3, duration d: Double) {
+        let level = b.carnage
+        guard level > 0, battle === b else { return }
+        let center = SCNVector3(V.x, 0.55, V.z)
+        let max = level == 2
+
+        // Hit flash.
+        let flash = SCNNode()
+        let light = SCNLight(); light.type = .omni; light.color = NSColor(red: 1, green: 0.5, blue: 0.25, alpha: 1)
+        let peak: CGFloat = max ? 7000 : 3500
+        light.intensity = peak
+        flash.light = light
+        flash.position = SCNVector3(V.x, 1.3, V.z)
+        flash.runAction(.customAction(duration: 0.35) { n, t in n.light?.intensity = peak * (1 - t / 0.35) })
+        addFX(flash, to: b)
+
+        // Screen shake: jolt the board and pieces (the camera is mid-move, so it stays put).
+        let amp: CGFloat = max ? 0.11 : 0.06
+        var jolts: [SCNAction] = []
+        for i in 0..<(max ? 9 : 5) {
+            let f = amp * CGFloat(1 - Double(i) / 10)
+            jolts.append(.move(to: SCNVector3(CGFloat.random(in: -f...f), CGFloat.random(in: -f...f) * 0.5, CGFloat.random(in: -f...f)), duration: 0.03))
+        }
+        jolts.append(.move(to: SCNVector3Zero, duration: 0.04))
+        for n in [boardNode, piecesNode, scarsNode] { n.runAction(.sequence(jolts), forKey: "shake") }
+
+        // Hydraulic fluid and oil, sprayed away from the attacker.
+        for (color, count) in [(NSColor(red: 0.55, green: 0.02, blue: 0.04, alpha: 1), max ? 480.0 : 220.0),
+                               (NSColor(red: 0.06, green: 0.04, blue: 0.03, alpha: 1), max ? 260.0 : 110.0)] {
+            let spray = Effects.burst(color: color, count: CGFloat(count), speed: 3.2, size: 0.055, life: 1.1)
+            spray.blendMode = .alpha
+            spray.spreadingAngle = 55
+            spray.emittingDirection = SCNVector3(dir.x, 0.9, dir.z)
+            spray.acceleration = SCNVector3(0, -6, 0)
+            let n = SCNNode(); n.position = center; n.addParticleSystem(spray)
+            addFX(n, to: b)
+        }
+
+        // Torn-off parts: small pieces of the victim's own geometry go flying (not the kneeling Regent).
+        if !b.victimKeeps {
+            var parts: [SCNNode] = []
+            b.victim.enumerateHierarchy { n, stop in
+                guard n.geometry != nil, !(n.name ?? "").hasPrefix("fx") else { return }
+                let (lo, hi) = n.boundingBox
+                if Swift.max(hi.x - lo.x, hi.y - lo.y, hi.z - lo.z) * CGFloat(n.scale.x) < 0.45 { parts.append(n) }
+                if parts.count >= 8 { stop.pointee = true }
+            }
+            let base = atan2(dir.z, dir.x)
+            for (i, p) in parts.prefix(max ? 7 : 3).enumerated() {
+                let c = p.clone()
+                c.removeAllActions()
+                c.transform = p.worldTransform
+                c.name = "fx:part"
+                let ang = base + CGFloat(i - 3) * 0.55
+                let reach = CGFloat.random(in: 0.9...1.9)
+                let to = SCNVector3(V.x + cos(ang) * reach, 0.05, V.z + sin(ang) * reach)
+                c.runAction(.sequence([.group([Effects.arc(from: c.position, to: to, height: CGFloat.random(in: 0.7...1.5), duration: d * 0.7),
+                                               .rotateBy(x: CGFloat.random(in: 4...9), y: 3, z: CGFloat(i), duration: d * 0.7)]),
+                                       .wait(duration: d * 0.4), .fadeOut(duration: d * 0.3)]))
+                addFX(c, to: b)
+            }
+        }
+
+        // Scorch/oil mark that stays for the rest of the game, plus droplets.
+        let stain = SCNMaterial()
+        stain.lightingModel = .blinn
+        stain.diffuse.contents = NSColor(red: 0.16, green: 0.01, blue: 0.02, alpha: 0.82)
+        stain.specular.contents = NSColor(white: 0.6, alpha: 1)   // wet sheen
+        stain.writesToDepthBuffer = false
+        let blots = max ? 6 : 3
+        for i in 0...blots {
+            let r: CGFloat = i == 0 ? CGFloat.random(in: 0.26...0.38) : CGFloat.random(in: 0.04...0.1)
+            let disc = SCNNode(geometry: SCNCylinder(radius: r, height: 0.002))
+            disc.geometry?.materials = [stain]
+            let off: CGFloat = i == 0 ? 0.1 : CGFloat.random(in: 0.3...0.75)
+            let a = atan2(dir.z, dir.x) + (i == 0 ? 0 : CGFloat.random(in: -0.8...0.8))
+            disc.position = SCNVector3(V.x + cos(a) * off, 0.006 + CGFloat(scarsNode.childNodes.count % 8) * 0.0004, V.z + sin(a) * off)
+            disc.scale = SCNVector3(0.05, 1, 0.05)
+            disc.runAction(.sequence([.wait(duration: d * 0.25), .scale(to: 1, duration: d * 0.3)]))
+            scarsNode.addChildNode(disc)
+        }
+        // ponytail: cap at ~150 marks, oldest go first; a full game rarely gets there.
+        while scarsNode.childNodes.count > 150 { scarsNode.childNodes.first?.removeFromParentNode() }
+
+        playSound(.crumble)
+        if max { playSound(.cannon) }
+    }
+
     private func settle(_ b: ActiveBattle, duration d: Double) {
         guard battle === b else { return }
         let a = b.attacker
@@ -744,6 +843,7 @@ final class BoardScene {
     private func endBattle() {
         guard let b = battle else { return }
         battle = nil
+        for n in [boardNode, piecesNode, scarsNode] { n.removeAction(forKey: "shake"); n.position = SCNVector3Zero }
         b.driver.removeAllActions()
         b.driver.removeFromParentNode()
         for n in b.fx { n.removeAllActions(); n.removeFromParentNode() }

@@ -111,6 +111,32 @@ final class FrameTests: XCTestCase {
         XCTAssertEqual(s.piecesNode.childNodes.count, 31, "no orphan nodes after a skip")
     }
 
+    func testMaximumCarnageScarsTheBoardThenANewGameWipesIt() async throws {
+        let s = BoardScene()
+        s.playSound = { _ in }
+        let r = try renderer(s)
+        let g0 = try Fixtures.game(["e4", "d5"])
+        var g = g0
+        s.sync(g.position)
+        let pm = try g.play(san: "exd5")
+        var prefs = AnimationPrefs(); prefs.speed = 3
+        XCTAssertEqual(prefs.carnage, 2, "Maximum is the default")
+        var done = 0
+        s.animate(pm, before: g0.position, after: g.position, prefs: prefs) { done += 1 }
+        let start = CACurrentMediaTime()
+        let ok = await waitUntil(15) {
+            r.render(atTime: CACurrentMediaTime() - start + 0.001)
+            return done == 1
+        }
+        XCTAssertTrue(ok)
+        XCTAssertGreaterThan(s.scarsNode.childNodes.count, 0, "a kill leaves a mark")
+        for n in [s.boardNode, s.piecesNode, s.scarsNode] { XCTAssertEqual(n.position.x, 0); XCTAssertEqual(n.position.y, 0) }
+        s.sync(g.position)
+        XCTAssertGreaterThan(s.scarsNode.childNodes.count, 0, "marks survive ordinary syncs")
+        s.sync(Game().position)
+        XCTAssertEqual(s.scarsNode.childNodes.count, 0, "a fresh board is clean")
+    }
+
     func testBattlesDisabledResolveWithoutABattle() throws {
         let s = BoardScene()
         s.playSound = { _ in }

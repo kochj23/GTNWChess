@@ -108,6 +108,9 @@ struct AnimationPrefs: Equatable, Sendable {
     /// 0.5...3×.
     var speed = 1.0
     var cinematicCamera = true
+    /// Kill-moment violence: 0 Tame (original effects), 1 Brutal, 2 Maximum (default).
+    var carnage = 2
 
+    static let carnageLevels = ["Tame", "Brutal", "Maximum"]
     static let speeds: [Double] = [0.5, 0.75, 1, 1.5, 2, 3]
 }

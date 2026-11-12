@@ -42,6 +42,9 @@ Inspired by the classic animated-chess games of the late '80s.
 - **36 capture battles, one for each attacker → victim pair.** Each battle has an attack style, the victim's reaction,
   a defeat style and the winner's flourish, and the camera swings in for it. You can skip a battle with a click, Space
   or Esc. Speed runs from 0.5× to 3×, and *Skip animations* turns battles off altogether.
+- **Carnage dial** (Settings › Animation: Tame, Brutal, Maximum; Maximum by default). At the kill the board shakes, a
+  hit flash goes off, the loser sprays hydraulic fluid and oil and has parts torn off, and a scorch mark stays where it
+  died for the rest of the game. A fresh board starts clean.
 - **Procedural sound.** Every effect is synthesised at runtime with AVAudioEngine; no audio samples ship.
 - **Modes:** play Nova at 8 levels (Cadet to Supernova), hot-seat on one Mac, or LAN play between two Macs. The
   current game saves itself and resumes at the next launch. All state stays inside the app's container.
@@ -220,6 +223,7 @@ sequenceDiagram
     G->>S: animate(PlayedMove, before, after, prefs)
     S->>S: BattlePlan.make(attacker, victim)
     Note over S: approach → reaction → strike → defeat → flourish<br/>timeline node drives phases, ×speed, cinematic camera
+    Note over S: at defeat: carnageImpact() — flash, shake, fluid spray,<br/>torn-off parts, persistent scorch (×carnage)
     alt Skip (click / Space / Esc) or 2D board
         S->>S: endBattle(): final state now
     end

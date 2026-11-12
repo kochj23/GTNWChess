@@ -38,21 +38,21 @@ struct NewGameConfig: Equatable {
 }
 
 enum Prefs {
-    static let battles = "anim.battles", speed = "anim.speed", camera = "anim.camera"
+    static let battles = "anim.battles", speed = "anim.speed", camera = "anim.camera", carnage = "anim.carnage"
     static let sound = "sound.enabled", volume = "sound.volume"
     static let coachAuto = "coach.auto", showThreats = "coach.threats", legalHints = "coach.legal"
     static let playerName = "player.name", antialias = "gfx.antialias", shadows = "gfx.shadows"
     static let siteSkipped = "site.signInSkipped"
 
     static func register() {
-        UserDefaults.standard.register(defaults: [battles: true, speed: 1.0, camera: true, sound: true, volume: 0.8,
+        UserDefaults.standard.register(defaults: [battles: true, speed: 1.0, camera: true, carnage: 2, sound: true, volume: 0.8,
                                                   coachAuto: true, showThreats: true, legalHints: true, antialias: true, shadows: true])
     }
 
     static var animation: AnimationPrefs {
         let d = UserDefaults.standard
         return AnimationPrefs(battlesEnabled: d.bool(forKey: battles), speed: min(3, max(0.5, d.double(forKey: speed))),
-                              cinematicCamera: d.bool(forKey: camera))
+                              cinematicCamera: d.bool(forKey: camera), carnage: min(2, max(0, d.integer(forKey: carnage))))
     }
 
     static var playerDisplayName: String {

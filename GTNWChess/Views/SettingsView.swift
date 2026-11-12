@@ -45,6 +45,7 @@ struct AnimationSettings: View {
     @AppStorage(Prefs.battles) private var battles = true
     @AppStorage(Prefs.speed) private var speed = 1.0
     @AppStorage(Prefs.camera) private var camera = true
+    @AppStorage(Prefs.carnage) private var carnage = 2
     var body: some View {
         Form {
             Toggle("Play capture battles", isOn: $battles).accessibilityIdentifier("battlesToggle")
@@ -53,6 +54,10 @@ struct AnimationSettings: View {
                 ForEach(AnimationPrefs.speeds, id: \.self) { s in Text("\(s, specifier: "%g")×").tag(s) }
             }
             Toggle("Cinematic battle camera", isOn: $camera)
+            Picker("Carnage", selection: $carnage) {
+                ForEach(AnimationPrefs.carnageLevels.indices, id: \.self) { i in Text(AnimationPrefs.carnageLevels[i]).tag(i) }
+            }.accessibilityIdentifier("carnagePicker")
+            Text("Brutal and Maximum add screen shake, hydraulic-fluid spray, torn-off parts and scorch marks that stay on the board.").font(.caption).foregroundStyle(.secondary)
             Text("Click the board, press Space or Esc, or use the banner's Skip to end a battle early.").font(.caption).foregroundStyle(.secondary)
         }.formStyle(.grouped)
     }
