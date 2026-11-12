@@ -166,6 +166,7 @@ struct SidePanel: View {
             PlayerRow(controller: controller, side: .white)
             Text(controller.statusLine).font(.callout.weight(.semibold)).foregroundStyle(controller.game.isOver ? Theme.accent : .white)
                 .accessibilityIdentifier("status")
+            if controller.mode == .watch { WatchControls(controller: controller) }
             if let note = controller.lanNote ?? (controller.mode == .lan ? controller.lan.status.label : nil) {
                 Label(note, systemImage: "network").font(.caption).foregroundStyle(.secondary)
             }
@@ -197,7 +198,7 @@ struct SidePanel: View {
                 Button("New Game…") { sheet = .newGame }.keyboardShortcut("n", modifiers: .command)
                 Spacer()
                 Button("Draw") { controller.offerDraw() }.disabled(controller.game.isOver || controller.drawOfferFrom != nil)
-                Button("Resign") { confirmResign = true }.disabled(controller.game.isOver)
+                Button("Resign") { confirmResign = true }.disabled(controller.game.isOver || controller.resigningSide == nil)
             }
             .controlSize(.small)
         }
@@ -325,5 +326,32 @@ struct PromotionPicker: View {
             Button("Cancel", role: .cancel) { choose(nil) }
         }
         .padding(24)
+    }
+}
+
+/// Spectator bar for Watch (Nova vs Nova): badge, pause/resume, pace, take over.
+struct WatchControls: View {
+    @ObservedObject var controller: GameController
+    @AppStorage(Prefs.watchDelay) private var delay = 1.2
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("SPECTATING", systemImage: "eye.fill").font(.caption.weight(.heavy))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(Theme.voidGlow.opacity(0.35)))
+                    .accessibilityIdentifier("spectating")
+                Spacer()
+                Button { controller.setWatchPaused(!controller.watchPaused) } label: {
+                    Label(controller.watchPaused ? "Resume" : "Pause", systemImage: controller.watchPaused ? "play.fill" : "pause.fill")
+                }.accessibilityIdentifier("watchPause")
+                Button { controller.takeOver() } label: { Label("Take over", systemImage: "hand.raised.fill") }
+                    .disabled(controller.game.isOver || controller.animating)
+                    .help("Play the side to move from here; Nova keeps the other side.")
+            }
+            Picker("Pace", selection: $delay) {
+                Text("Blitz").tag(0.3); Text("Normal").tag(1.2); Text("Savour").tag(3.0)
+            }.pickerStyle(.segmented)
+        }
+        .controlSize(.small)
     }
 }

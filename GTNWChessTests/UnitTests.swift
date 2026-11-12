@@ -257,6 +257,28 @@ final class CastAndBattleUnitTests: XCTestCase {
     }
 }
 
+@MainActor
+final class WatchModeUnitTests: XCTestCase {
+    func testWatchGamesRecordAsAIvsAIWithMatchup() throws {
+        let box = PlayOutbox(fileURL: nil, sink: nil)
+        let r = PlayRecorder(outbox: box)
+        let ctx = PlayContext(sessionID: UUID(), mode: .watch, white: .nova(.cadet), black: .nova(.pilot), you: "none", clock: nil,
+                              startedAt: Date(), startFEN: nil)
+        r.begin(ctx)
+        XCTAssertTrue(r.isEnabled)
+        guard case .start(_, _, let p)? = box.pending.first else { return XCTFail() }
+        XCTAssertEqual(p, "AI vs AI")
+        let g = try Fixtures.game(Fixtures.scholarsMate)
+        XCTAssertEqual(PlayReport.outcome(g, ctx), "white_wins", "watch outcomes are from the board, not a player")
+        let s = try XCTUnwrap(JSONSerialization.jsonObject(with: PlayReport.summary(g, ctx, analysis: nil, opening: Opening(eco: "-", name: "x"),
+            white: "a", black: "b", duration: 1, takebacks: 0)) as? [String: Any])
+        XCTAssertEqual(s["spectator"] as? Bool, true)
+        let sides = try XCTUnwrap((s["matchup"] as? [String: Any])?["sides"] as? [[String: Any]])
+        XCTAssertEqual(sides.map { $0["side"] as? String }, ["white", "black"])
+        XCTAssertEqual(GameMode(rawValue: "watch"), .watch, "saved watch games decode")
+    }
+}
+
 final class CoachUnitTests: XCTestCase {
     func testCoachFactsSeeHangingPieceAndMateThreat() throws {
         let g = try Fixtures.game(["e4", "e5", "Bc4", "Nc6", "Qh5"])

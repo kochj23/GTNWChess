@@ -36,7 +36,7 @@ final class FunctionalTests: XCTestCase {
         let s = jsonObject(end.summary)
         XCTAssertEqual(s["termination"] as? String, "checkmate")
         XCTAssertNotNil(s["analysis"] as? [String: Any], "post-game analysis attached")
-        XCTAssertNotNil(c.recap)
+        let okRecap = await waitUntil(30) { c.recap != nil }; XCTAssertTrue(okRecap, "recap lands after the end op (it waits on the narrator)")
     }
 
     func testVsNovaEngineRepliesAndTakebackReturnsToHumanTurn() async throws {
@@ -52,6 +52,51 @@ final class FunctionalTests: XCTestCase {
         XCTAssertEqual(c.game.sideToMove, .white)
         let kinds = c.outbox.pending.flatMap(\.eventRecords).map(\.kind)
         XCTAssertEqual(kinds.filter { $0 == "takeback" }.count, 1)
+    }
+
+    func testWatchModeNovaPlaysBothSidesAndIsRecordedAsAIvsAI() async {
+        UserDefaults.standard.set(0.2, forKey: Prefs.watchDelay)
+        defer { UserDefaults.standard.removeObject(forKey: Prefs.watchDelay) }
+        let c = TestEnv.controller()
+        var cfg = NewGameConfig(); cfg.mode = .watch; cfg.level = .cadet; cfg.blackLevel = .scout
+        c.newGame(cfg)
+        XCTAssertEqual(c.you, "none")
+        XCTAssertFalse(c.canInteract, "spectators can't move pieces")
+        XCTAssertNil(c.resigningSide)
+        XCTAssertEqual(c.player(.black).level, EngineLevel.scout.rawValue)
+        let ok = await waitUntil(20) { c.game.ply >= 4 }; XCTAssertTrue(ok, "Nova plays both sides on her own")
+        guard case .start(_, _, let player)? = c.outbox.pending.first else { return XCTFail("watch games are recorded") }
+        XCTAssertEqual(player, "AI vs AI", "never a person's name")
+    }
+
+    func testWatchPauseHoldsAndTakeOverHandsTheSeatOver() async {
+        UserDefaults.standard.set(0.2, forKey: Prefs.watchDelay)
+        defer { UserDefaults.standard.removeObject(forKey: Prefs.watchDelay) }
+        let c = TestEnv.controller()
+        var cfg = NewGameConfig(); cfg.mode = .watch; cfg.level = .cadet; cfg.blackLevel = .cadet
+        c.newGame(cfg)
+        let started = await waitUntil(15) { c.game.ply >= 1 }; XCTAssertTrue(started)
+        c.setWatchPaused(true)
+        let settled = await waitUntil(5) { !c.engineThinking }; XCTAssertTrue(settled)
+        let held = c.game.ply
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        XCTAssertEqual(c.game.ply, held, "paused: no further moves")
+        let side = c.game.sideToMove
+        c.takeOver()
+        XCTAssertEqual(c.mode, .vsNova)
+        XCTAssertTrue(c.isLocal(side))
+        XCTAssertTrue(c.canInteract, "your move now")
+        XCTAssertEqual(c.player(side).kind, "human")
+        let ops = c.outbox.pending
+        let watchID = ops.first!.sessionID
+        guard case .end(let id, _, let end)? = ops.first(where: { $0.kindName == "end" }) else { return XCTFail("watch session closed") }
+        XCTAssertEqual(id, watchID)
+        XCTAssertEqual(end.outcome, "taken_over")
+        XCTAssertEqual(end.player, "AI vs AI")
+        XCTAssertEqual(jsonObject(end.summary)["spectator"] as? Bool, true)
+        guard case .start(let humanID, _, let p)? = ops.last(where: { $0.kindName == "start" }) else { return XCTFail() }
+        XCTAssertNotEqual(humanID, watchID, "your part is a new, normal session")
+        XCTAssertNil(p, "recorded under your own name")
     }
 
     func testVsNovaAsBlackEngineOpens() async {

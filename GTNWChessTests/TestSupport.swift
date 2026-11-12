@@ -62,7 +62,7 @@ final class RecordingSink: PlaySink, @unchecked Sendable {
             _ops.append(name)
         }
     }
-    func start(id: UUID, startedAt: Date) async throws { try gate("start") }
+    func start(id: UUID, startedAt: Date, player: String?) async throws { try gate("start") }
     func events(id: UUID, _ events: [PlayEventRecord], actions: Int) async throws {
         try gate("events")
         lock.withLock { _events += events }

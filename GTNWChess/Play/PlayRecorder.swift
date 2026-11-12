@@ -12,7 +12,8 @@
 
 import Foundation
 
-enum GameMode: String, Codable, Sendable { case vsNova = "vs_nova", hotseat, lan }
+/// `watch` = AI vs AI spectator games: recorded as player "AI vs AI" with summary.spectator = true (kept out of human stats).
+enum GameMode: String, Codable, Sendable { case vsNova = "vs_nova", hotseat, lan, watch }
 
 struct PlayerInfo: Codable, Equatable, Sendable {
     var name: String
@@ -122,6 +123,7 @@ enum PlayReport {
     static func outcome(_ game: Game, _ ctx: PlayContext) -> String {
         guard let r = game.result else { return "abandoned" }
         if r.termination == .abandoned { return "abandoned" }
+        if ctx.mode == .watch { return r.winner.map { "\($0.name)_wins" } ?? "draw" }
         if ctx.you == "both" { return "hotseat" }
         guard let w = r.winner else { return "draw" }
         return w.name == ctx.you ? "win" : "loss"
@@ -153,6 +155,8 @@ enum PlayReport {
         return Array(out.prefix(40))
     }
 
+    static let watchPlayer = "AI vs AI"
+
     static func summary(_ game: Game, _ ctx: PlayContext, analysis: GameAnalysis?, opening: Opening, white: String, black: String,
                         duration: TimeInterval, takebacks: Int) -> Data {
         let r = game.result
@@ -175,6 +179,14 @@ enum PlayReport {
             "takebacks": takebacks,
         ]
         s["pgn"] = String(PGN.export(game, white: white, black: black, date: ctx.startedAt).prefix(40_000))
+        if ctx.mode == .watch {
+            s["spectator"] = true
+            s["matchup"] = ["sides": [Side.white, .black].map { side -> [String: Any] in
+                let p = ctx.player(side)
+                return ["side": side.name, "kind": "engine", "backend": NSNull(), "model": NSNull(),
+                        "label": "Nova engine" + (p.levelName.map { " (\($0))" } ?? "")]
+            }]
+        }
         if let a = analysis {
             func st(_ x: SideStats) -> [String: Any] {
                 ["accuracy": x.accuracy, "acpl": x.acpl, "blunders": x.blunders, "mistakes": x.mistakes, "inaccuracies": x.inaccuracies]
@@ -257,7 +269,7 @@ final class PlayRecorder {
         takebacks = 0
         ended = false
         guard isEnabled else { return }
-        outbox.enqueue(.start(id: ctx.sessionID, startedAt: ctx.startedAt))
+        outbox.enqueue(.start(id: ctx.sessionID, startedAt: ctx.startedAt, player: ctx.mode == .watch ? PlayReport.watchPlayer : nil))
         outbox.enqueue(.events(id: ctx.sessionID, events: [PlayReport.startEvent(ctx, at: ctx.startedAt)], actions: 0))
         seq = 1
     }
@@ -301,6 +313,19 @@ final class PlayRecorder {
                                          duration: t.timeIntervalSince(ctx.startedAt), takebacks: takebacks)
         outbox.enqueue(.end(id: ctx.sessionID, startedAt: ctx.startedAt,
                             end: PlaySessionEnd(outcome: PlayReport.outcome(game, ctx), score: PlayReport.score(ctx, analysis),
-                                                actions: game.moves.count, summary: summary, endedAt: t)))
+                                                actions: game.moves.count, summary: summary, endedAt: t,
+                                                player: ctx.mode == .watch ? PlayReport.watchPlayer : nil)))
+    }
+
+    /// Watch game handed to a human: the AI-vs-AI session ends here as "taken_over"; the caller starts a normal one.
+    func endTakenOver(game: Game, white: String, black: String) {
+        guard isEnabled, !ended, let ctx = context, ctx.mode == .watch else { return }
+        ended = true
+        let t = now()
+        let summary = PlayReport.summary(game, ctx, analysis: nil, opening: Opening(eco: "-", name: "Taken over"), white: white, black: black,
+                                         duration: t.timeIntervalSince(ctx.startedAt), takebacks: takebacks)
+        outbox.enqueue(.end(id: ctx.sessionID, startedAt: ctx.startedAt,
+                            end: PlaySessionEnd(outcome: "taken_over", score: nil, actions: game.moves.count, summary: summary,
+                                                endedAt: t, player: PlayReport.watchPlayer)))
     }
 }

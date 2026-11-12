@@ -29,6 +29,8 @@ struct PendingPromotion: Identifiable, Equatable {
 struct NewGameConfig: Equatable {
     var mode: GameMode = .vsNova
     var level: EngineLevel = .pilot
+    /// Void's level in a Watch game (`level` is Solar's).
+    var blackLevel: EngineLevel = .captain
     /// "white", "black" or "random" (vs Nova / LAN host).
     var side = "white"
     var playerName = PlayerInfo.defaultName
@@ -42,11 +44,11 @@ enum Prefs {
     static let sound = "sound.enabled", volume = "sound.volume"
     static let coachAuto = "coach.auto", showThreats = "coach.threats", legalHints = "coach.legal"
     static let playerName = "player.name", antialias = "gfx.antialias", shadows = "gfx.shadows"
-    static let siteSkipped = "site.signInSkipped"
+    static let siteSkipped = "site.signInSkipped", watchDelay = "watch.delay"
 
     static func register() {
         UserDefaults.standard.register(defaults: [battles: true, speed: 1.0, camera: true, carnage: 2, sound: true, volume: 0.8,
-                                                  coachAuto: true, showThreats: true, legalHints: true, antialias: true, shadows: true])
+                                                  coachAuto: true, showThreats: true, legalHints: true, antialias: true, shadows: true, watchDelay: 1.2])
     }
 
     static var animation: AnimationPrefs {
@@ -68,8 +70,11 @@ final class GameController: ObservableObject {
     @Published private(set) var white = PlayerInfo.human(PlayerInfo.defaultName, local: true, account: nil)
     @Published private(set) var black = PlayerInfo.nova(.pilot)
     @Published private(set) var level: EngineLevel = .pilot
-    /// "white" | "black" | "both".
+    /// "white" | "black" | "both" | "none" (watching).
     @Published private(set) var you = "white"
+    /// Watch mode: hold the next engine move.
+    @Published private(set) var watchPaused = false
+    private var lastWatchConfig: NewGameConfig?
     @Published var selected: Square?
     @Published var promotion: PendingPromotion?
     @Published private(set) var animating = false
@@ -149,6 +154,7 @@ final class GameController: ObservableObject {
         switch mode {
         case .hotseat: return true
         case .vsNova, .lan: return you == s.name
+        case .watch: return false
         }
     }
 
@@ -205,10 +211,16 @@ final class GameController: ObservableObject {
             you = side.name
             white = side == .white ? me : .human("Challenger", local: false, account: nil)
             black = side == .black ? me : .human("Challenger", local: false, account: nil)
+        case .watch:
+            you = "none"
+            white = .nova(c.level)
+            black = .nova(c.blackLevel)
+            lastWatchConfig = c
         }
+        watchPaused = false
         install(g, clock: c.clock.map(ChessClock.init(config:)))
         g = game
-        flipped = side == .black && c.mode != .hotseat
+        flipped = side == .black && c.mode != .hotseat && c.mode != .watch
         feed.removeAll()
         if c.mode == .lan { return }   // starts when the guest arrives
         beginRecording(sessionID: UUID(), hostSide: nil)
@@ -385,19 +397,51 @@ final class GameController: ObservableObject {
     // MARK: - Engine
 
     func maybeEngineMove() {
-        guard mode == .vsNova, !game.isOver, !isLocal(game.sideToMove), !engineThinking else { return }
+        guard mode == .vsNova || (mode == .watch && !watchPaused), !game.isOver, !isLocal(game.sideToMove), !engineThinking else { return }
         engineThinking = true
-        let token = gameToken, snapshot = game, lvl = level
+        let token = gameToken, snapshot = game
+        // Watch: each side plays at its own level (stored on the player); vs Nova: the chosen level.
+        let lvl = mode == .watch ? (player(game.sideToMove).level.flatMap(EngineLevel.init(rawValue:)) ?? level) : level
+        let pace = mode == .watch ? min(5, max(0.2, UserDefaults.standard.double(forKey: Prefs.watchDelay))) : 0.45
         Task {
             let started = Date()
             let m = try? await engine.bestMove(for: snapshot, level: lvl)
             let elapsed = Date().timeIntervalSince(started)
-            if elapsed < 0.45 { try? await Task.sleep(nanoseconds: UInt64((0.45 - elapsed) * 1e9)) }
+            if elapsed < pace { try? await Task.sleep(nanoseconds: UInt64((pace - elapsed) * 1e9)) }
             guard self.gameToken == token, self.game.ply == snapshot.ply else { return }
             self.engineThinking = false
             if let m { self.commit(m, source: .engine) }
             else { self.say("Nova's engine failed to answer; it's your move.", kind: .system, source: "Engine") }
         }
+    }
+
+    // MARK: - Watch (Nova vs Nova)
+
+    func setWatchPaused(_ paused: Bool) {
+        guard mode == .watch else { return }
+        watchPaused = paused
+        if paused { return }
+        if game.isOver, let c = lastWatchConfig { newGame(c) } else { maybeEngineMove() }
+    }
+
+    /// Takes the seat of the side to move; the other side stays Nova. The watch session ends as "taken_over" and a normal one starts.
+    func takeOver() {
+        guard mode == .watch, !game.isOver, !animating else { return }
+        let side = game.sideToMove
+        gameToken = UUID()          // drop a pending engine reply for this side
+        engineThinking = false
+        let opponentLevel = player(side.opposite).level.flatMap(EngineLevel.init(rawValue:)) ?? level
+        recorder.endTakenOver(game: game, white: whiteName, black: blackName)
+        let me = PlayerInfo.human(Prefs.playerDisplayName, local: true, account: localAccount)
+        if side == .white { white = me } else { black = me }
+        mode = .vsNova
+        you = side.name
+        level = opponentLevel
+        watchPaused = false
+        flipped = side == .black
+        beginRecording(sessionID: UUID(), hostSide: nil)   // from here on it's your game
+        say("You take over \(side.faction). Nova keeps \(side.opposite.faction).", kind: .system, source: "GTNW Chess")
+        afterPositionChange()
     }
 
     func requestHint() {
@@ -445,7 +489,7 @@ final class GameController: ObservableObject {
 
     // MARK: - Takeback, resign, draw
 
-    var canUndo: Bool { mode != .lan && !game.moves.isEmpty && !animating && !(game.isOver && game.result?.termination == .resignation) }
+    var canUndo: Bool { mode != .lan && mode != .watch && !game.moves.isEmpty && !animating && !(game.isOver && game.result?.termination == .resignation) }
 
     func undo() {
         guard canUndo else { return }
@@ -478,6 +522,7 @@ final class GameController: ObservableObject {
     var resigningSide: Side? {
         guard !game.isOver else { return nil }
         if mode == .hotseat { return game.sideToMove }
+        if mode == .watch { return nil }
         return you == "black" ? .black : .white
     }
 
@@ -512,6 +557,8 @@ final class GameController: ObservableObject {
             drawOfferFrom = s
             lan.send(.drawOffer(ply: game.ply))
             say("Draw offered. Waiting for an answer…", kind: .system, source: "GTNW Chess")
+        case .watch:
+            return
         }
     }
 
@@ -530,7 +577,7 @@ final class GameController: ObservableObject {
         switch mode {
         case .hotseat: return true
         case .lan: return by.name != you
-        case .vsNova: return false
+        case .vsNova, .watch: return false
         }
     }
 
@@ -571,7 +618,7 @@ final class GameController: ObservableObject {
         autosave()
         guard let r = game.result else { return }
         if let w = r.winner {
-            SoundPlayer.shared.play(mode == .hotseat || isLocal(w) ? .victory : .defeat)
+            SoundPlayer.shared.play(mode == .hotseat || mode == .watch || isLocal(w) ? .victory : .defeat)
         } else {
             SoundPlayer.shared.play(.draw)
         }
@@ -610,6 +657,12 @@ final class GameController: ObservableObject {
             self.coachText = r.value
             self.coachSource = r.source.label
             self.say(r.value, kind: .recap, source: r.source.label)
+            // Watch: the next game starts on its own after a short break, unless paused or the viewer moved on.
+            if self.mode == .watch, let c = self.lastWatchConfig {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard self.gameToken == token, self.mode == .watch, !self.watchPaused else { return }
+                self.newGame(c)
+            }
         }
     }
 

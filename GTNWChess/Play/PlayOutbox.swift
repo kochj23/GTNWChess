@@ -12,13 +12,13 @@ import Foundation
 import os
 
 enum PlayOp: Codable, Equatable, Sendable {
-    case start(id: UUID, startedAt: Date)
+    case start(id: UUID, startedAt: Date, player: String? = nil)
     case events(id: UUID, events: [PlayEventRecord], actions: Int)
     case end(id: UUID, startedAt: Date, end: PlaySessionEnd)
 
     var sessionID: UUID {
         switch self {
-        case .start(let id, _), .events(let id, _, _), .end(let id, _, _): return id
+        case .start(let id, _, _), .events(let id, _, _), .end(let id, _, _): return id
         }
     }
 }
@@ -107,7 +107,7 @@ final class PlayOutbox: ObservableObject {
 
     nonisolated static func send(_ op: PlayOp, to sink: PlaySink) async throws {
         switch op {
-        case .start(let id, let at): try await sink.start(id: id, startedAt: at)
+        case .start(let id, let at, let p): try await sink.start(id: id, startedAt: at, player: p)
         case .events(let id, let evs, let actions): try await sink.events(id: id, evs, actions: actions)
         case .end(let id, let at, let e): try await sink.end(id: id, startedAt: at, e)
         }

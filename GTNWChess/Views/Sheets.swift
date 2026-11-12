@@ -19,9 +19,20 @@ struct NewGameSheet: View {
             Picker("Mode", selection: $c.mode) {
                 Text("vs Nova").tag(GameMode.vsNova)
                 Text("Hot-seat (2 players, this Mac)").tag(GameMode.hotseat)
+                Text("Watch Nova vs Nova").tag(GameMode.watch)
             }
-            TextField("Your name", text: $c.playerName)
-            if c.mode == .vsNova {
+            .accessibilityIdentifier("modePicker")
+            if c.mode != .watch { TextField("Your name", text: $c.playerName) }
+            if c.mode == .watch {
+                Picker("Solar Nova (white)", selection: $c.level) {
+                    ForEach(EngineLevel.allCases) { l in Text("\(l.rawValue). \(l.name)").tag(l) }
+                }
+                Picker("Void Nova (black)", selection: $c.blackLevel) {
+                    ForEach(EngineLevel.allCases) { l in Text("\(l.rawValue). \(l.name)").tag(l) }
+                }
+                Text("Sit back: Nova plays both sides, a new game starts after each one, and nothing is recorded. Pause or take over a side from the panel.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if c.mode == .vsNova {
                 Picker("Nova's level", selection: $c.level) {
                     ForEach(EngineLevel.allCases) { l in Text("\(l.rawValue). \(l.name) — \(l.blurb)").tag(l) }
                 }

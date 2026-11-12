@@ -26,13 +26,19 @@ struct PlaySessionEnd: Codable, Equatable, Sendable {
     /// A JSON object (≤ 64 KB).
     var summary: Data
     var endedAt: Date
+    /// Overrides the sink's player column (watch games are "AI vs AI", never a person).
+    var player: String? = nil
 }
 
 protocol PlaySink: Sendable {
     var label: String { get }
-    func start(id: UUID, startedAt: Date) async throws
+    func start(id: UUID, startedAt: Date, player: String?) async throws
     func events(id: UUID, _ events: [PlayEventRecord], actions: Int) async throws
     func end(id: UUID, startedAt: Date, _ end: PlaySessionEnd) async throws
+}
+
+extension PlaySink {
+    func start(id: UUID, startedAt: Date) async throws { try await start(id: id, startedAt: startedAt, player: nil) }
 }
 
 // MARK: - Direct Postgres (LAN role)
@@ -79,13 +85,13 @@ final class PGPlaySink: PlaySink, @unchecked Sendable {
 
     static func iso(_ d: Date) -> String { d.ISO8601Format(.iso8601WithTimeZone(includingFractionalSeconds: true)) }
 
-    func start(id: UUID, startedAt: Date) async throws {
+    func start(id: UUID, startedAt: Date, player override: String?) async throws {
         try await run("""
             INSERT INTO play.sessions (id, game, client, player, started_at, last_seen_at)
             VALUES ($1::uuid, 'gtnwchess', 'mac', $2, $3::timestamptz, $3::timestamptz)
             ON CONFLICT (id) DO UPDATE SET last_seen_at = GREATEST(play.sessions.last_seen_at, EXCLUDED.last_seen_at)
             WHERE play.sessions.ended_at IS NULL
-            """, [id.uuidString, player, Self.iso(startedAt)])
+            """, [id.uuidString, override ?? player, Self.iso(startedAt)])
     }
 
     func events(id: UUID, _ events: [PlayEventRecord], actions: Int) async throws {
@@ -109,7 +115,7 @@ final class PGPlaySink: PlaySink, @unchecked Sendable {
               actions = GREATEST(play.sessions.actions, EXCLUDED.actions), ended_at = EXCLUDED.ended_at,
               outcome = EXCLUDED.outcome, score = EXCLUDED.score, summary = EXCLUDED.summary
             WHERE play.sessions.ended_at IS NULL
-            """, [id.uuidString, player, Self.iso(startedAt), Self.iso(max(e.endedAt, startedAt)), e.outcome,
+            """, [id.uuidString, e.player ?? player, Self.iso(startedAt), Self.iso(max(e.endedAt, startedAt)), e.outcome,
                   e.score.map { String($0) }, String(e.actions), String(decoding: e.summary, as: UTF8.self)])
     }
 }
@@ -269,9 +275,11 @@ final class SitePlaySink: PlaySink, @unchecked Sendable {
 
     init(client: GamesSiteClient) { self.client = client }
 
-    func start(id: UUID, startedAt: Date) async throws {
+    func start(id: UUID, startedAt: Date, player: String?) async throws {
         guard client.isConfigured else { throw PlayError.notConfigured }
-        _ = try await client.authed("POST", "v1/play/gtnwchess/sessions", body: ["id": id.uuidString.lowercased()])
+        var body: [String: Any] = ["id": id.uuidString.lowercased()]
+        if player != nil { body["spectator"] = true }      // the site records it as "AI vs AI", not the signed-in account
+        _ = try await client.authed("POST", "v1/play/gtnwchess/sessions", body: body)
     }
 
     func events(id: UUID, _ events: [PlayEventRecord], actions: Int) async throws {
