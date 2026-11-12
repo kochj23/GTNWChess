@@ -1,0 +1,83 @@
+name: GTNWChess
+
+options:
+  bundleIdPrefix: com.jkoch
+  deploymentTarget:
+    macOS: "14.0"
+
+packages:
+  NovaAIKit:
+    url: https://github.com/kochj23/NovaAIKit.git
+    from: 1.0.0
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: NO
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  GTNWChess:
+    type: application
+    platform: macOS
+    sources:
+      - path: GTNWChess
+        excludes:
+          - "Resources/Stockfish/**"
+          - "Info.plist"
+      - path: GTNWChess/Resources/Stockfish
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: NovaAIKit
+        product: NovaAIKit
+    postBuildScripts:
+      - name: Bundle Stockfish (GPLv3)
+        script: bash "$SRCROOT/scripts/bundle-stockfish.sh"
+        basedOnDependencyAnalysis: false
+    settings:
+      PRODUCT_NAME: "GTNW Chess"
+      PRODUCT_MODULE_NAME: GTNWChess
+      PRODUCT_BUNDLE_IDENTIFIER: com.jkoch.gtnwchess
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      GENERATE_INFOPLIST_FILE: YES
+      INFOPLIST_KEY_CFBundleDisplayName: "GTNW Chess"
+      INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.board-games
+      INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Jordan Koch. Stockfish is GPLv3, see Acknowledgements."
+      INFOPLIST_FILE: GTNWChess/Info.plist
+      COMBINE_HIDPI_IMAGES: YES
+      CODE_SIGN_STYLE: Automatic
+      CODE_SIGN_IDENTITY: "-"
+      ENABLE_HARDENED_RUNTIME: NO
+
+  GTNWChessTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - GTNWChessTests
+    dependencies:
+      - target: GTNWChess
+      - package: NovaAIKit
+        product: NovaAIKit
+    settings:
+      BUNDLE_LOADER: "$(TEST_HOST)"
+      TEST_HOST: "$(BUILT_PRODUCTS_DIR)/GTNW Chess.app/Contents/MacOS/GTNW Chess"
+      PRODUCT_BUNDLE_IDENTIFIER: com.jkoch.gtnwchess.tests
+      GENERATE_INFOPLIST_FILE: YES
+      CODE_SIGN_IDENTITY: "-"
+
+schemes:
+  GTNWChess:
+    build:
+      targets:
+        GTNWChess: all
+        GTNWChessTests: [test]
+    test:
+      targets:
+        - GTNWChessTests
+      gatherCoverageData: false

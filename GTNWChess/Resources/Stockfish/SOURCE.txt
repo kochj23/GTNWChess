@@ -1,0 +1,24 @@
+Stockfish 19 — bundled with GTNW Chess as a separate program
+=============================================================
+
+GTNW Chess ships an unmodified arm64 build of Stockfish 19 (Contents/MacOS/stockfish) and talks to it over the
+UCI protocol through pipes. Stockfish is free software licensed under the GNU General Public License, version 3
+(see COPYING.txt in this folder). The Stockfish authors are listed in AUTHORS.txt.
+
+Corresponding source
+--------------------
+The exact source for the bundled binary is the official Stockfish 19 release:
+  https://github.com/official-stockfish/Stockfish/tree/sf_19
+  https://github.com/official-stockfish/Stockfish/archive/refs/tags/sf_19.tar.gz
+The binary was built from that tag by Homebrew (formula "stockfish", version 19, bottle for arm64 macOS) with no
+changes; the embedded NNUE networks are the ones referenced by that source tag.
+
+Written offer
+-------------
+For at least three years from the date you received this copy of GTNW Chess, Jordan Koch will provide anyone a
+complete machine-readable copy of the corresponding Stockfish source code, on request, for no more than the cost of
+physically performing the distribution. Open an issue at https://github.com/kochj23/GTNWChess/issues or write to the
+repository owner.
+
+GTNW Chess's own code is MIT licensed (see the repository's LICENSE). It is not a derivative work of Stockfish:
+the two programs only exchange UCI text messages.

@@ -1,0 +1,8 @@
+.DS_Store
+/dd*/
+/build/
+/Vendor/stockfish/stockfish
+*.xcresult
+xcuserdata/
+/shots-tmp/
+*.log
