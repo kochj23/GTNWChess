@@ -83,13 +83,88 @@ A test checks that all 36 are distinct.
 
 ## Install
 
-1. Open `GTNWChess-v1.0.0-buildN.dmg` and drag **GTNW Chess** to Applications.
-2. The app is signed ad hoc, not with a Developer ID. On the first launch, right-click the app in Applications, choose
-   **Open**, then click **Open** again.
-3. Optional: on Jordan's Macs on the LAN, run
-   `"/Applications/GTNW Chess.app/Contents/MacOS/GTNW Chess" --setup-credentials` once. It fetches the play-history
-   role password over SSH into the login Keychain (`nova-games-pg` / `gtnwchess_mac`). Other Macs sign in to Nova
-   Games from the app instead.
+### What you need
+
+- A Mac with **Apple Silicon** (M1 or later). The app is arm64 only.
+- **macOS 14 Sonoma** or later.
+- About 110 MB of disk space. Stockfish is bundled, so there is nothing else to install.
+- Optional: a local AI server ([Ollama](https://ollama.com), LM Studio/MLX, Open WebUI) or an OpenRouter/OpenAI API
+  key if you want Nova to talk. Without one, the coach and banter use scripted lines and everything else works.
+
+### Step by step
+
+1. **Download** `GTNWChess-v<version>-build<N>.dmg` from the
+   [latest release](https://github.com/kochj23/GTNWChess/releases/latest).
+2. **Open the DMG** and drag **GTNW Chess** onto the **Applications** shortcut next to it. Eject the DMG.
+3. **First launch.** The app is signed ad hoc, not notarized with an Apple Developer ID, so Gatekeeper blocks a
+   double-click the first time. Either:
+   - right-click (or Control-click) **GTNW Chess** in Applications, choose **Open**, then click **Open** again; or
+   - on macOS 15 and later, if there is no Open button: try to open the app once, then go to **System Settings ›
+     Privacy & Security**, scroll down to *"GTNW Chess" was blocked*, click **Open Anyway** and confirm.
+
+   You only do this once. If you would rather not trust a prebuilt binary, [build it yourself](#build): it takes a
+   couple of minutes.
+4. **Local Network prompt.** The first time you open *LAN play*, macOS asks whether GTNW Chess may find devices on
+   your local network. Allow it if you want to play another Mac over Wi-Fi; deny it and everything else still works.
+5. **Optional: AI.** Settings › AI. Leave the backend on **Auto** to use the first local server that answers, or pick
+   one and paste an API key. Keys go into the Keychain (see below), never into preferences files.
+6. **Optional: play history.** Settings › Nova Games. This only applies to the author's home network. Everyone else
+   can ignore it: games still save locally and can be exported as PGN.
+
+### Updating and removing
+
+- **Update:** quit the app, drag the new version over the old one in Applications, and do the right-click › Open step
+  again (a new ad hoc build counts as a new app to Gatekeeper). Saved games and settings carry over.
+- **Uninstall:** delete the app, then optionally remove
+  `~/Library/Application Support/GTNW Chess`, `~/Library/Preferences/com.jkoch.gtnwchess.plist`,
+  `~/Library/Caches/com.jkoch.gtnwchess`, and any Keychain items listed below (Keychain Access › search "gtnwchess" or
+  "nova-games").
+
+### Why GTNW Chess may ask for Keychain access
+
+At some point macOS may show *"GTNW Chess wants to use your confidential information stored in … in your keychain."*
+That is expected, and it is worth explaining exactly why, because a chess game asking for your keychain should make
+you suspicious.
+
+**What it stores.** The app keeps every secret it has in the macOS login Keychain, and nothing else there:
+
+| Keychain service | Account | What it is | When it is created |
+|---|---|---|---|
+| `com.jkoch.gtnwchess.<backend>` (e.g. `.openrouter`, `.openai`) | the backend | An AI API key you pasted into Settings › AI | Only if you enter a key |
+| `com.jkoch.gtnwchess.gamessite` | your Nova Games username | Your Nova Games site password | Only if you sign in to Nova Games |
+| `nova-games-pg` | `gtnwchess_mac` | Database password for the author's own Macs on his home LAN | Only via `--setup-credentials` on those Macs |
+
+If you never enter an API key and never sign in to Nova Games, the app never writes to your Keychain and you will
+never see the prompt.
+
+**Why the Keychain and not a settings file.**
+1. **It is encrypted at rest.** Preferences (`.plist`) and app-support files are plain text that any process running
+   as you, any backup, and any sync tool can read. Keychain items are encrypted and locked with your login.
+2. **Access is per app.** Each item records which app created it. Another program cannot quietly read your OpenRouter
+   key; macOS asks you first. That is the same prompt you are seeing, working in your favour.
+3. **Secrets stay out of logs, crash reports and exported games.** The app never writes a password or key to
+   `UserDefaults`, files, logs or error messages. The Keychain is the only place they exist, so a PGN export or a
+   screenshot of Settings cannot leak one.
+4. **Uninstalling or resetting is clean and visible.** You can see, inspect and delete every item in Keychain Access,
+   and *Sign out* in the app deletes the stored password straight away.
+5. **It is the platform's standard.** Apple's guidance is to store credentials in the Keychain. Rolling our own
+   encryption, or hiding keys in the app bundle, would be less safe, not more.
+
+**Why macOS asks again after an update.** Keychain items remember the exact code signature of the app that created
+them. GTNW Chess is signed ad hoc, so every new build has a new signature, and macOS cannot tell that 1.0.1 is the same
+app as 1.0.0. It asks you to confirm. Click **Always Allow** to let the new version read the items the old one stored.
+**Deny** is safe too: the app keeps working, and it just asks you to sign in or paste the key again.
+
+**What it never does.** The app only reads the items in the table above, by exact service name. It does not list,
+read or touch your other passwords, Safari logins, Wi-Fi keys or certificates, and it never sends a secret anywhere
+except to the service it belongs to: an AI key to that AI provider, the Nova Games password to the Nova Games site
+over pinned TLS. It is all in [`Play/Credentials.swift`](GTNWChess/Play/Credentials.swift) and NovaAIKit if you want
+to check.
+
+**For the author's LAN Macs only:**
+`"/Applications/GTNW Chess.app/Contents/MacOS/GTNW Chess" --setup-credentials` fetches the play-history database
+password from the Games server over SSH (key auth, never prompts, value never printed) and stores it as
+`nova-games-pg` / `gtnwchess_mac`. Other Macs sign in to Nova Games from the app instead.
 
 ## Playing
 
@@ -191,12 +266,12 @@ flowchart TB
     subgraph UI[SwiftUI + AppKit]
       CV[ContentView / SidePanel / Sheets]
       SV[SettingsView + NovaAISettingsView]
-      B3[Board3DView: SCNView] & B2[Board2DView]
+      B3["Board3DView: SCNView"] & B2[Board2DView]
     end
-    GC[GameController<br/>@MainActor] --> CV
+    GC["GameController<br/>@MainActor"] --> CV
     CV --> GC
     GC --> CH[Chess: Position, Game, SAN, FEN, PGN, Openings]
-    GC --> EN[EngineService<br/>UCIEngine (Stockfish) + FallbackEngine]
+    GC --> EN["EngineService<br/>UCIEngine (Stockfish) + FallbackEngine"]
     GC --> BS[BoardScene<br/>PieceFactory, BattlePlan, Effects]
     GC --> AU[SoundPlayer + Synth]
     GC --> AI[NovaNarrator → NovaAIKit]
