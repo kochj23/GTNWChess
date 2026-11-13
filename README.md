@@ -24,6 +24,17 @@ Inspired by the classic animated-chess games of the late '80s.
 | Engine | Stockfish 19 (GPLv3), bundled as a separate executable; see [Licences](#licences) |
 | Author | Jordan Koch ([kochj23](https://github.com/kochj23)) |
 
+<!-- watch-it-play:start -->
+## Watch it play itself
+
+AI versus AI, narrated by Nova (an AI voice). Two local models play each other; the narration is written from the game's own record of what happened.
+
+| **Highlights:** [Two AIs played 58 moves. Nobody won.](https://www.youtube.com/watch?v=XUNhPHtedwU) | **Full game:** [Two AIs played chess for 58 moves. Nobody won.](https://www.youtube.com/watch?v=N3bsanvzhMQ) |
+|---|---|
+| <a href="https://www.youtube.com/watch?v=XUNhPHtedwU"><img src="https://img.youtube.com/vi/XUNhPHtedwU/hqdefault.jpg" width="360" alt="Two AIs played 58 moves. Nobody won."></a> | <a href="https://www.youtube.com/watch?v=N3bsanvzhMQ"><img src="https://img.youtube.com/vi/N3bsanvzhMQ/hqdefault.jpg" width="360" alt="Two AIs played chess for 58 moves. Nobody won."></a> |
+
+<!-- watch-it-play:end -->
+
 ## Contents
 
 [Features](#features) · [Screenshots](#screenshots) · [The cast](#the-cast) · [Install](#install) ·
