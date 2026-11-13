@@ -215,7 +215,10 @@ struct PlayerRow: View {
         HStack {
             Circle().fill(side == .white ? Theme.solar : Theme.rim).frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 0) {
-                Text(controller.displayName(side)).font(.headline).lineLimit(1)
+                HStack(spacing: 4) {
+                    if controller.player(side).kind == "model" { Image(systemName: "cpu").foregroundStyle(Theme.voidGlow) }
+                    Text(controller.displayName(side)).font(.headline).lineLimit(1)
+                }.accessibilityIdentifier("name-\(side.name)")
                 Text("\(side.faction) · \(captured)").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
@@ -329,7 +332,7 @@ struct PromotionPicker: View {
     }
 }
 
-/// Spectator bar for Watch (Nova vs Nova): badge, pause/resume, pace, take over.
+/// Spectator bar for Watch (AI vs AI): badge with the matchup, pause/resume, pace, take over.
 struct WatchControls: View {
     @ObservedObject var controller: GameController
     @AppStorage(Prefs.watchDelay) private var delay = 1.2
@@ -340,13 +343,15 @@ struct WatchControls: View {
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Capsule().fill(Theme.voidGlow.opacity(0.35)))
                     .accessibilityIdentifier("spectating")
+                Text(controller.matchupLabel).font(.caption.weight(.semibold)).lineLimit(1).truncationMode(.middle)
+                    .accessibilityIdentifier("matchup")
                 Spacer()
                 Button { controller.setWatchPaused(!controller.watchPaused) } label: {
                     Label(controller.watchPaused ? "Resume" : "Pause", systemImage: controller.watchPaused ? "play.fill" : "pause.fill")
                 }.accessibilityIdentifier("watchPause")
                 Button { controller.takeOver() } label: { Label("Take over", systemImage: "hand.raised.fill") }
                     .disabled(controller.game.isOver || controller.animating)
-                    .help("Play the side to move from here; Nova keeps the other side.")
+                    .help("Play the side to move from here; the other side keeps its engine or model.")
             }
             Picker("Pace", selection: $delay) {
                 Text("Blitz").tag(0.3); Text("Normal").tag(1.2); Text("Savour").tag(3.0)

@@ -438,3 +438,125 @@ final class CoachClaimUnitTests: XCTestCase {
         XCTAssertFalse(list.contains("e2 "))
     }
 }
+
+@MainActor
+final class ModelVsModelUnitTests: XCTestCase {
+    func testValidatorAcceptsSANUCIAndProseAndRejectsTheRest() throws {
+        let pos = Position.start
+        XCTAssertEqual(try MoveValidator.move(in: "e4", position: pos).uci, "e2e4")
+        XCTAssertEqual(try MoveValidator.move(in: "1. Nf3", position: pos).uci, "g1f3")
+        XCTAssertEqual(try MoveValidator.move(in: "g1f3", position: pos).uci, "g1f3")
+        XCTAssertEqual(try MoveValidator.move(in: "I'll play **d4**.", position: pos).uci, "d2d4")
+        XCTAssertThrowsError(try MoveValidator.move(in: "", position: pos))
+        XCTAssertThrowsError(try MoveValidator.move(in: "Qh5 is my favourite", position: pos), "illegal from the start")
+        XCTAssertThrowsError(try MoveValidator.move(in: "I resign, good game", position: pos))
+        let castle = try Fixtures.game(["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6"]).position
+        XCTAssertTrue(try MoveValidator.move(in: "0-0", position: castle).isCastle)
+    }
+
+    func testRejectionNamesTheReplyClipped() {
+        do { _ = try MoveValidator.move(in: String(repeating: "x", count: 500), position: .start); XCTFail() }
+        catch let e as MoveValidator.Rejection { XCTAssertLessThan(e.reason.count, 140) } catch { XCTFail("\(error)") }
+    }
+
+    func testModelPlayerInfoAndLabels() {
+        let p = PlayerInfo.model(.ollama, "qwen3:8b", fallback: .captain)
+        XCTAssertEqual(p.kind, "model")
+        XCTAssertEqual(p.name, "qwen3:8b")
+        XCTAssertEqual(p.backend, "ollama")
+        XCTAssertEqual(p.level, EngineLevel.captain.rawValue, "the engine fallback level rides along")
+        XCTAssertEqual(PlayerInfo.model(.auto, "", fallback: .cadet).name, "AI (settings)")
+        XCTAssertNil(PlayerInfo.model(.auto, "", fallback: .cadet).model)
+        XCTAssertEqual(NewGameConfig().whiteSeat.useModel, false, "Watch defaults to the engine")
+    }
+
+    func testPromptCarriesFENLegalMovesAndRecentMoves() throws {
+        let g = try Fixtures.game(["e4", "e5"])
+        let p = ModelPlayer.prompt(g, rejected: "\"Qh5x\" is not one of the legal moves")
+        XCTAssertTrue(p.contains(g.position.fen))
+        XCTAssertTrue(p.contains("Recent moves: e4 e5"))
+        XCTAssertTrue(p.contains("Legal moves: ") && p.contains("Nf3"))
+        XCTAssertTrue(p.contains("rejected"))
+    }
+
+    func testSummaryMatchupModelKindAndFallbacks() throws {
+        let ctx = PlayContext(sessionID: UUID(), mode: .watch, white: .model(.anthropic, "claude-sonnet-5.5", fallback: .pilot),
+                              black: .nova(.cadet), you: "none", clock: nil, startedAt: Date(), startFEN: nil)
+        let g = try Fixtures.game(Fixtures.foolsMate)
+        let s = jsonObject(PlayReport.summary(g, ctx, analysis: nil, opening: Opening(eco: "-", name: "x"), white: "a", black: "b",
+                                              duration: 1, takebacks: 0, fallbacks: ["white": 2]))
+        let sides = try XCTUnwrap((s["matchup"] as? [String: Any])?["sides"] as? [[String: Any]])
+        XCTAssertEqual(sides[0]["kind"] as? String, "model")
+        XCTAssertEqual(sides[0]["backend"] as? String, "anthropic")
+        XCTAssertEqual(sides[0]["model"] as? String, "claude-sonnet-5.5")
+        XCTAssertEqual(sides[0]["label"] as? String, "claude-sonnet-5.5")
+        XCTAssertEqual(sides[1]["kind"] as? String, "engine")
+        XCTAssertEqual(s["fallbacks"] as? [String: Int], ["white": 2], "only model sides are counted")
+        XCTAssertEqual(PlayReport.outcome(g, ctx), "black_wins")
+    }
+
+    func testOldSavedRecorderStateAndPlayerDecode() throws {
+        let old = #"{"name":"Nova","kind":"nova","level":3,"levelName":"Pilot","local":true}"#
+        let p = try JSONDecoder().decode(PlayerInfo.self, from: Data(old.utf8))
+        XCTAssertNil(p.backend, "1.0 saves load")
+        let box = PlayOutbox(fileURL: nil, sink: nil)
+        let r = PlayRecorder(outbox: box)
+        r.begin(PlayContext(sessionID: UUID(), mode: .watch, white: .model(.ollama, "m", fallback: .cadet), black: .nova(.cadet),
+                            you: "none", clock: nil, startedAt: Date(), startFEN: nil))
+        r.modelReply(ModelReply(side: .white, backend: "ollama", model: "m", reply: "zz", latencyMs: 5, attempt: 3, fallback: true), ply: 1)
+        let st = try JSONDecoder().decode(PlayRecorder.State.self, from: JSONEncoder().encode(r.state))
+        XCTAssertEqual(st.fallbacks, ["white": 1], "fallback counts survive save/resume")
+    }
+}
+
+/// id Software adoptions: gameplay RNG, personality data, chat gate.
+@MainActor
+final class IdAdoptionUnitTests: XCTestCase {
+    func testSplitMix64IsSeededAndStable() {
+        var a = SplitMix64(state: 42), b = SplitMix64(state: 42), c = SplitMix64(state: 43)
+        let xa = (0..<5).map { _ in a.next() }
+        XCTAssertEqual(xa, (0..<5).map { _ in b.next() })
+        XCTAssertNotEqual(xa, (0..<5).map { _ in c.next() })
+        XCTAssertEqual(SplitMix64.hash("e4"), SplitMix64.hash("e4"))
+        XCTAssertNotEqual(SplitMix64.hash("e4"), SplitMix64.hash("d4"))
+    }
+
+    func testBuiltInEngineIsReproducibleFromTheSeed() throws {
+        let pos = try Position(fen: Fixtures.kiwipete)
+        let a = FallbackEngine.search(pos, depth: 1, noise: 60, seed: 7)
+        XCTAssertEqual(a, FallbackEngine.search(pos, depth: 1, noise: 60, seed: 7), "same seed + position = same move")
+    }
+
+    func testSeedIsRecordedAndDrivesTheRandomSide() throws {
+        let c = TestEnv.controller()
+        var cfg = NewGameConfig(); cfg.mode = .hotseat; cfg.seed = 0xABCDEF
+        c.newGame(cfg)
+        XCTAssertEqual(c.seed, 0xABCDEF)
+        XCTAssertEqual((c.engine.fallback as? FallbackEngine)?.seed, 0xABCDEF)
+        let start = jsonObject(c.outbox.pending.flatMap(\.eventRecords).first!.detail)
+        XCTAssertEqual(start["seed"] as? String, "0000000000abcdef")
+        var v = NewGameConfig(); v.mode = .vsNova; v.side = "random"; v.seed = 1
+        let sides = (0..<3).map { _ -> String in c.newGame(v); return c.you }
+        XCTAssertEqual(Set(sides).count, 1, "a fixed seed picks the same side every time")
+    }
+
+    func testPersonalityTableHasEveryLevelAndADefault() {
+        for l in EngineLevel.allCases { XCTAssertFalse(Personality.of(l).voice.isEmpty) }
+        XCTAssertEqual(Personality.of(.cadet).noise, 60, "weak levels keep their noise")
+        XCTAssertEqual(Personality.of(.supernova).noise, 0)
+        XCTAssertEqual(Personality.of(nil).voice, "calm, dry and precise", "default block")
+        XCTAssertGreaterThan(Personality.of(.cadet).chatRate, Personality.of(.supernova).chatRate)
+    }
+
+    func testChatGateCooldownProbabilityAndNotableEvents() {
+        var g = ChatGate()
+        g.roll = { 0.0 }
+        let p = Personality(aggression: 0, noise: 0, chatRate: 0.5, chatCooldown: 2, voice: "x")
+        XCTAssertTrue(g.allow("battle", ply: 10, personality: p, notable: false))
+        XCTAssertFalse(g.allow("battle", ply: 11, personality: p, notable: false), "cooldown")
+        XCTAssertTrue(g.allow("battle", ply: 12, personality: p, notable: true), "a queen falls: always")
+        XCTAssertTrue(g.allow("coach", ply: 12, personality: p, notable: false), "per-event cooldowns")
+        g.roll = { 0.9 }
+        XCTAssertFalse(g.allow("battle", ply: 30, personality: p, notable: false), "probability")
+    }
+}

@@ -1,10 +1,10 @@
 # GTNW Chess
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![Platform](https://img.shields.io/badge/macOS-14%2B-lightgrey)
 ![Arch](https://img.shields.io/badge/arch-arm64-lightgrey)
 ![Swift](https://img.shields.io/badge/Swift-5.9%20mode-orange)
-![AI](https://img.shields.io/badge/AI-NovaAIKit%201.0-purple)
+![AI](https://img.shields.io/badge/AI-NovaAIKit%201.1-purple)
 ![Engine](https://img.shields.io/badge/engine-Stockfish%2019-green)
 
 GTNW Chess is a native macOS chess game with animated battles. Two robot fleets, the gold **Solar** fleet (white) and
@@ -18,16 +18,16 @@ Inspired by the classic animated-chess games of the late '80s.
 
 | | |
 |---|---|
-| Version | **1.0.0** |
+| Version | **1.1.0** |
 | Requires | macOS 14 or later, Apple silicon (arm64) |
-| Built with | Swift (5.9 language mode), SwiftUI, AppKit, SceneKit, AVAudioEngine, Network.framework, CryptoKit, Security; one package: [NovaAIKit](https://github.com/kochj23/NovaAIKit) 1.0.0 |
+| Built with | Swift (5.9 language mode), SwiftUI, AppKit, SceneKit, AVAudioEngine, Network.framework, CryptoKit, Security; one package: [NovaAIKit](https://github.com/kochj23/NovaAIKit) 1.1.0 |
 | Engine | Stockfish 19 (GPLv3), bundled as a separate executable; see [Licences](#licences) |
 | Author | Jordan Koch ([kochj23](https://github.com/kochj23)) |
 
 ## Contents
 
 [Features](#features) · [Screenshots](#screenshots) · [The cast](#the-cast) · [Install](#install) ·
-[Playing](#playing) · [LAN play](#lan-play) · [Play history and Nova's reviews](#play-history-and-novas-reviews) ·
+[Playing](#playing) · [Watch: AI vs AI](#watch-ai-vs-ai) · [LAN play](#lan-play) · [Play history and Nova's reviews](#play-history-and-novas-reviews) ·
 [AI](#ai) · [Architecture](#architecture) · [Build](#build) · [Tests](#tests) · [Licences](#licences)
 
 ## Features
@@ -46,8 +46,9 @@ Inspired by the classic animated-chess games of the late '80s.
   hit flash goes off, the loser sprays hydraulic fluid and oil and has parts torn off, and a scorch mark stays where it
   died for the rest of the game. A fresh board starts clean.
 - **Procedural sound.** Every effect is synthesised at runtime with AVAudioEngine; no audio samples ship.
-- **Modes:** play Nova at 8 levels (Cadet to Supernova), hot-seat on one Mac, or LAN play between two Macs. The
-  current game saves itself and resumes at the next launch. All state stays inside the app's container.
+- **Modes:** play Nova at 8 levels (Cadet to Supernova), hot-seat on one Mac, LAN play between two Macs, or
+  **Watch** an AI-vs-AI game: Nova's engine or any language model on each side (model vs model, engine vs model).
+  The current game saves itself and resumes at the next launch. All state stays inside the app's container.
 - **Learning tools:**
   - Legal-move dots and highlighting of pieces under attack.
   - Hints (⌘H) and takebacks (⌘Z).
@@ -179,6 +180,60 @@ password from the Games server over SSH (key auth, never prompts, value never pr
 
 Nova accepts a draw only after move 10 and only when her own evaluation is no better than +0.3.
 
+## Watch: AI vs AI
+
+**Game › New Game… › Watch AI vs AI.** Each side is either **Nova engine** (one of the 8 levels) or a **language
+model** picked with NovaAIKit's backend + model picker. Every side defaults to the engine.
+
+- **Spectator bar:** a SPECTATING badge with the matchup (for example `qwen3:8b vs Nova (Captain)`), Pause/Resume,
+  a pace control (Blitz, Normal, Savour) and **Take over**. The player rows show each side's model name with a chip
+  icon.
+- **Take over** gives you the side to move. The other side keeps whatever it was, engine or model. The AI-vs-AI
+  session ends there as `taken_over`, and a normal session in your name starts from that position.
+- **Auto-next:** a new game starts 10 seconds after each one ends, unless you pause.
+- **Recording:** watch games are recorded as player `AI vs AI` with `summary.spectator = true`, so they never count
+  toward anyone's stats. Nova's journal writes an "AI vs AI" entry that names the models.
+
+### Model vs model
+
+A model side gets the position (FEN), the full list of legal moves in SAN and the last 12 moves. It answers with one
+move.
+
+```mermaid
+flowchart TD
+    T[Model side to move] --> Q["ModelPlayer asks backend + model<br/>(FEN, legal moves, recent moves)"]
+    Q --> V{"MoveValidator<br/>(one validator for every driver)"}
+    V -->|legal| C["commit(move)<br/>same path as clicks, engine, LAN"]
+    V -->|"invalid or error (ask 1-2)"| R[Re-ask with the error]
+    R --> Q
+    V -->|"invalid on ask 3"| F["Nova engine plays this move<br/>fallbacks[side] += 1"]
+    F --> C
+    Q -.->|every reply| E[("model_reply event<br/>side, backend, model, excerpt,<br/>latency_ms, valid, fallback")]
+```
+
+- **Validation:** the reply is accepted only if it holds a legal move (SAN such as `Nf3` or `O-O`, or UCI such as
+  `g1f3`). Prose around the move is fine. Up to 2 re-asks quote the error back to the model. After the third failed
+  answer, Nova's engine plays that move at the side's fallback level.
+- **Recording:** every reply is a `model_reply` event, so replays and journals read the record and never call a model
+  again. `summary.matchup.sides[]` has `kind: "model"` with `backend`, `model` and `label`, and `summary.fallbacks`
+  counts engine fallbacks per model side.
+- **Never blocks:** model calls run asynchronously. The board, the animations and the pace delay carry on as normal.
+
+### Providers
+
+The model picker offers every backend NovaAIKit 1.1 knows. Local and LAN backends are Ollama (the fleet hosts by
+default), MLX, TinyLLM, TinyChat and Open WebUI. The cloud backends are OpenRouter, OpenAI, Anthropic (Claude), Google
+Gemini, xAI (Grok), Mistral, DeepSeek and Meta Llama API. Nova Gateway is also offered when Nova is allowed. Cloud
+backends need an API key in Settings › AI. The key stays in the Keychain, goes only over https, and never appears in
+events, summaries or logs. Local models are the default because they cost nothing.
+
+### No Nova
+
+Settings › AI › **Allow Nova** turns off every Nova dependency (the Nova Gateway backend), so you can run GTNW Chess
+with no Nova at all. Requests that need Nova then fail with "Nova is turned off", and the model pickers stop offering
+it. With AI off altogether, the coach, banter and recaps use the built-in script, and every Watch side plays as Nova's
+engine.
+
 ## LAN play
 
 One Mac hosts the game (File › Host LAN Game…) and shows a 6-digit pairing code. The other Mac finds it over Bonjour
@@ -216,10 +271,12 @@ flowchart LR
 - **Session data:**
   - Players, result, termination, opening (ECO), move count and duration.
   - Captures by piece type, checks, a material graph, and the PGN.
+  - The game's gameplay RNG `seed`. In Watch games, also `spectator`, `matchup` and `fallbacks`.
   - Stockfish analysis: accuracy, average centipawn loss, blunders, mistakes and inaccuracies, the biggest swing, and
     the decisive moment.
 - **Events:**
   - One `ply` event per move, plus `takeback`, `draw_offer` and `resign`.
+  - In Watch games with a model side, a `model_reply` event for each answer the model gave.
   - A `move` event per move with SAN, UCI, the evaluation before and after, the classification and the clock.
   - A final `game_over`.
 - **Classification:** each move is classified by the drop in win percentage, Lichess-style: best, good, inaccuracy
@@ -233,13 +290,14 @@ flowchart LR
 
 ## AI
 
-All AI goes through [NovaAIKit](https://github.com/kochj23/NovaAIKit) 1.0.0. NovaAIKit provides:
+All AI goes through [NovaAIKit](https://github.com/kochj23/NovaAIKit) 1.1.0. NovaAIKit provides:
 
 - AI on/off, and backend, model and URL pickers.
 - A status indicator.
 - Automatic failover between Ollama endpoints.
 - Keys stored only in the Keychain (`com.jkoch.gtnwchess.*`) and sent only over https.
 - A built-in scripted fallback for every feature.
+- Per-request backend and model overrides, which Watch's model sides use, and the **Allow Nova** switch.
 
 ```mermaid
 flowchart TD
@@ -258,6 +316,12 @@ The language model writes the coach notes, the battle banter between pieces, and
 the moves and never the people. Stockfish picks every move Nova plays. The game checks every move or square the model
 mentions against the real position and falls back to the scripted line if anything doesn't match. The default
 backend is the LAN fleet's Ollama, and the app ships no keys.
+
+Banter and the automatic coach go through a **chat gate**: event + probability + cooldown + situation. A queen
+capture, a check or a threat on the board always gets the model. Ordinary events get it at the level's chat rate,
+and only after the level's cooldown. Gated-out events use the scripted line and cost nothing. The rates, cooldowns
+and Nova's voice at each level come from a per-level **personality table**, bundled as JSON. The same table sets the
+built-in engine's noise and aggression.
 
 ## Architecture
 
@@ -306,6 +370,16 @@ sequenceDiagram
     G->>G: highlights, coach, Nova's reply or game over
 ```
 
+### Design notes (ideas adopted from id Software's released source; no code copied)
+
+| Idea | Source | In GTNW Chess |
+|---|---|---|
+| Gameplay RNG kept apart from cosmetic RNG, seed recorded | Doom `P_Random` / `M_Random` | `SplitMix64`, seeded per game. It drives the random side and the built-in engine's noise, and the seed is saved in the summary. Battle effects and chatter use system random. Stockfish's own skill randomness is internal to Stockfish. |
+| The record is the source of truth | Quake III `Com_InitJournaling` | Each model reply, with its latency and any fallback, is an event, and replays and journals never call a model again |
+| One command type and one validator for every driver | Quake III `BotInputToUserCommand` | Clicks, Stockfish, LAN peers and models all go through `commit` → `Game.play`. Model text goes through `MoveValidator` first, and a fallback just swaps the source to the engine. |
+| Personality as data with a default block | Quake III `chars.h` / `BotLoadCachedCharacter` | `Personality` table per level, bundled JSON |
+| Gated chatter | Quake III `BotChat_*` | `ChatGate` for banter and the auto coach |
+
 ## Build
 
 You need Xcode 16 or later, [XcodeGen](https://github.com/yonaskolb/XcodeGen) and Stockfish for the bundle step
@@ -329,13 +403,13 @@ The suites cover all seven categories:
 
 | Category | What it covers |
 |---|---|
-| Unit | Perft (6 positions), FEN, SAN, castling, en passant, promotion, every draw rule, PGN, openings, win%/accuracy/classification, UCI parsing, battle plans, cast, coach facts, AI validator, clocks, recorder payloads, LAN codec, referee, consent form |
-| Security | Keychain naming, no key over http, no shipped keys, UCI/FEN/PGN injection and size limits, LAN frame limits, PSK per code, referee rejects out-of-turn, illegal and stale moves, site sign-in validation, Origin/CSRF, consent OFF never sends a name, a source scan for secrets and household names, bundled CAs |
-| Performance | Perft budget, move generation throughput, PGN round trip, coach facts per move, engine response, synth, scene sync, summary size |
-| Retry | Backoff maths, outbox (transient kept, permanent dropped, order, persistence, cap), engine retry → fallback, illegal engine reply, AI retry and fallback, LAN reconnect giving up cleanly |
-| Integration | Real Stockfish (skipped if absent), TLS-PSK LAN on loopback incl. wrong code and reconnect, play history against a throwaway TLS Postgres 17 with NovaGames `play.sql` (RLS, no DELETE, idempotent writes) |
-| Functional | Hot-seat and vs-Nova games to the end with history, takeback, draws, resignation, promotion, save/resume, PGN study mode, engine vs engine, AI narration with fallback, two-controller LAN games (only the host writes) |
-| Frame / UI state | 32 piece nodes, node reuse, highlights, camera limits, battle start/skip-once/run-to-end under an offscreen renderer, non-blank offscreen frames, 2D/3D and flip state |
+| Unit | Model-move validator (SAN, UCI, prose, illegal, empty), model player info, prompts, matchup/fallbacks summary, old-save decoding, SplitMix64, seed recording, personality table, chat gate, Perft (6 positions), FEN, SAN, castling, en passant, promotion, every draw rule, PGN, openings, win%/accuracy/classification, UCI parsing, battle plans, cast, coach facts, AI validator, clocks, recorder payloads, LAN codec, referee, consent form |
+| Security | Keychain naming, no key over http, no shipped keys, UCI/FEN/PGN injection and size limits, LAN frame limits, PSK per code, referee rejects out-of-turn, illegal and stale moves, site sign-in validation, Origin/CSRF, consent OFF never sends a name, a source scan for secrets and household names, bundled CAs, a cloud model side's key only in the https Authorization header and never in events, summaries or the feed, clipped reply excerpts |
+| Performance | Perft budget, move generation throughput, PGN round trip, coach facts per move, engine response, synth, scene sync, summary size, move validator on long rambling replies |
+| Retry | Backoff maths, outbox (transient kept, permanent dropped, order, persistence, cap), engine retry → fallback, illegal engine reply, AI retry and fallback, LAN reconnect giving up cleanly, model invalid-then-valid re-ask with the error, 3 invalid answers → engine fallback, backend down |
+| Integration | Real Stockfish (skipped if absent), TLS-PSK LAN on loopback incl. wrong code and reconnect, play history against a throwaway TLS Postgres 17 with NovaGames `play.sql` (RLS, no DELETE, idempotent writes), a model-vs-model session through the outbox to a sink and to Postgres (matchup, fallbacks, `model_reply` events, contiguous seq) |
+| Functional | Hot-seat and vs-Nova games to the end with history, takeback, draws, resignation, promotion, save/resume, PGN study mode, engine vs engine, AI narration with fallback, two-controller LAN games (only the host writes), Watch engine vs model with recorded replies, fallback counting, take over against a model |
+| Frame / UI state | 32 piece nodes, node reuse, highlights, camera limits, battle start/skip-once/run-to-end under an offscreen renderer, non-blank offscreen frames, 2D/3D and flip state, Watch spectator state (model names, matchup, thinking line, pause) |
 
 ## Licences
 

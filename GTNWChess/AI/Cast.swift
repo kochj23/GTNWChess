@@ -67,3 +67,63 @@ enum Cast {
         return ("\(a): \(taunt[attacker]!)", "\(v): \(lastWord[attacker]![victim]!)")
     }
 }
+
+// MARK: - Level personalities (data) and the chat gate
+
+/// Nova's character per engine level, as data (after Quake III's bot characteristic files, chars.h /
+/// BotLoadCachedCharacter: one table per skill with a default block for anything missing). The same row feeds the
+/// built-in engine (`noise`, `aggression`) and the language-model prompts (`voice`), and gates chatter (`chatRate`,
+/// `chatCooldown`). Bundled as JSON in the binary so it is edited as data, not code.
+struct Personality: Codable, Equatable, Sendable {
+    /// 0...1: bonus the built-in engine gives captures and checks at the root.
+    var aggression: Double
+    /// Centipawns of random noise the built-in engine adds per root move (gameplay RNG, seeded per game).
+    var noise: Int
+    /// 0...1: chance that an ordinary event gets AI banter (notable events always do).
+    var chatRate: Double
+    /// Plies to wait after AI banter before the next ordinary one.
+    var chatCooldown: Int
+    /// How Nova sounds at this level, for the LLM prompts.
+    var voice: String
+
+    static let json = """
+        {"default": {"aggression": 0.2, "noise": 0, "chatRate": 0.5, "chatCooldown": 2, "voice": "calm, dry and precise"},
+         "levels": {
+          "1": {"aggression": 0.8, "noise": 60, "chatRate": 0.9, "chatCooldown": 0, "voice": "an over-excited cadet who charges at everything"},
+          "2": {"aggression": 0.6, "noise": 60, "chatRate": 0.8, "chatCooldown": 1, "voice": "a keen scout, chatty and a bit nervous"},
+          "3": {"aggression": 0.4, "noise": 20, "chatRate": 0.7, "chatCooldown": 1, "voice": "a cheerful pilot who loves a trade"},
+          "4": {"aggression": 0.3, "noise": 20, "chatRate": 0.6, "chatCooldown": 2, "voice": "a confident captain, teasing but fair"},
+          "5": {"aggression": 0.2, "noise": 0, "chatRate": 0.5, "chatCooldown": 2, "voice": "a cool commander who plays the long game"},
+          "6": {"aggression": 0.2, "noise": 0, "chatRate": 0.4, "chatCooldown": 3, "voice": "a stern admiral, few words, all of them sharp"},
+          "7": {"aggression": 0.1, "noise": 0, "chatRate": 0.35, "chatCooldown": 3, "voice": "Nova at full focus, wry and quietly smug"},
+          "8": {"aggression": 0.1, "noise": 0, "chatRate": 0.3, "chatCooldown": 4, "voice": "Nova unleashed, icy and theatrical"}}}
+        """
+
+    private struct Table: Codable { var `default`: Personality; var levels: [String: Personality] }
+    private static let table: Table? = try? JSONDecoder().decode(Table.self, from: Data(json.utf8))
+    static let fallback = Personality(aggression: 0.2, noise: 0, chatRate: 0.5, chatCooldown: 2, voice: "calm, dry and precise")
+
+    /// The level's row, else the table's default block, else the built-in default.
+    static func of(_ level: EngineLevel?) -> Personality {
+        guard let t = table else { return fallback }
+        return level.flatMap { t.levels[String($0.rawValue)] } ?? t.default
+    }
+}
+
+/// Gates AI chatter: event + probability + cooldown + situation (after Quake III BotChat_Kill / BotChat_*), so banter
+/// stays cheap and never spams. A gated-out event uses the scripted line instead of calling a model. Narration is
+/// cosmetic, so its dice are the cosmetic RNG (system random), never the game's seeded RNG.
+struct ChatGate {
+    private(set) var lastPly: [String: Int] = [:]
+    var roll: () -> Double = { Double.random(in: 0..<1) }
+
+    /// True: call the model for this event. `notable` (a queen falls, check, a threat on the board) always passes.
+    mutating func allow(_ event: String, ply: Int, personality p: Personality, notable: Bool) -> Bool {
+        if !notable {
+            if let last = lastPly[event], ply - last <= p.chatCooldown { return false }
+            if roll() >= p.chatRate { return false }
+        }
+        lastPly[event] = ply
+        return true
+    }
+}

@@ -72,6 +72,15 @@ final class PerformanceTests: XCTestCase {
         XCTAssertLessThan(t, 5.0)
     }
 
+    func testMoveValidatorIsCheapOnLongJunkReplies() throws {
+        let pos = try Position(fen: Fixtures.kiwipete)
+        let junk = String(repeating: "Well, considering the position carefully, ", count: 200) + "O-O"
+        let t = time { for _ in 0..<50 { _ = try? MoveValidator.move(in: junk, position: pos) } }
+        XCTAssertLessThan(t, 2.0, "token cap keeps a rambling model from stalling the main actor")
+        let prompt = time { for _ in 0..<200 { _ = ModelPlayer.prompt(try! Fixtures.game(["e4", "e5", "Nf3"])) } }
+        XCTAssertLessThan(prompt, 2.0)
+    }
+
     func testSummaryStaysUnderPayloadLimit() throws {
         let g = try Fixtures.game(Fixtures.operaGameSANs)
         let ctx = PlayContext(sessionID: UUID(), mode: .hotseat, white: .human("A", local: true, account: nil),

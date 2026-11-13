@@ -175,6 +175,67 @@ final class PlayDBIntegrationTests: XCTestCase {
     }
 }
 
+/// Model vs model end to end: controller → recorder → outbox → sink (and the throwaway Postgres when installed),
+/// with stub models on both sides.
+@MainActor
+final class ModelVsModelIntegrationTests: XCTestCase {
+    override func tearDown() { StubHTTP.reset(); UserDefaults.standard.removeObject(forKey: Prefs.watchDelay) }
+
+    private func playModelGame(sink: PlaySink?) async throws -> GameController {
+        UserDefaults.standard.set(0.2, forKey: Prefs.watchDelay)
+        StubHTTP.respond { r in
+            guard r.url.path.hasSuffix("/api/chat") else { return (200, StubHTTP.json(["models": []])) }
+            let move = TestEnv.firstLegal(r.body)
+            guard move != "??" else { return (200, TestEnv.ollamaReply("Nice move.")) }   // banter/coach, not a move request
+            // One bad answer: the first ask from the start position (decided per request, so other traffic can't shift it).
+            let body = String(decoding: r.body, as: UTF8.self)
+            let first = body.contains("PPPPPPPP") && body.contains("RNBQKBNR w") && !body.contains("previous answer was rejected")
+            return (200, TestEnv.ollamaReply(first ? "Kz9" : move))
+        }
+        let c = TestEnv.controller(sink: sink, ai: TestEnv.stubbedAI())
+        c.newGame(TestEnv.watch(white: true, black: true))
+        let ok = await waitUntil(20) { c.game.ply >= 4 }; XCTAssertTrue(ok)
+        c.setWatchPaused(true)
+        _ = await waitUntil(10) { !c.engineThinking }
+        c.takeOver()
+        return c
+    }
+
+    func testModelVsModelSessionReachesTheSinkWithMatchupFallbacksAndReplies() async throws {
+        let sink = RecordingSink()
+        let c = try await playModelGame(sink: sink)
+        await c.outbox.flushNow()   // a no-op while the controller's own flush is draining; wait for that one
+        _ = await waitUntil(10) { c.outbox.pending.isEmpty }
+        XCTAssertTrue(c.outbox.pending.isEmpty, c.outbox.lastError ?? "")
+        let end = try XCTUnwrap(sink.ends.first)
+        XCTAssertEqual(end.player, "AI vs AI")
+        let s = jsonObject(end.summary)
+        XCTAssertEqual(s["spectator"] as? Bool, true)
+        let sides = try XCTUnwrap((s["matchup"] as? [String: Any])?["sides"] as? [[String: Any]])
+        XCTAssertEqual(sides.map { $0["kind"] as? String }, ["model", "model"])
+        XCTAssertEqual(sides.map { $0["model"] as? String }, ["qwen3:8b", "qwen3:8b"])
+        XCTAssertEqual(s["fallbacks"] as? [String: Int], ["white": 0, "black": 0], "one bad answer, then a valid re-ask: no fallback")
+        let replies = sink.events.filter { $0.kind == "model_reply" }.map { jsonObject($0.detail) }
+        XCTAssertEqual(replies.first?["valid"] as? Bool, false)
+        XCTAssertEqual(replies.first?["excerpt"] as? String, "Kz9")
+        XCTAssertEqual(replies.dropFirst().first?["valid"] as? Bool, true)
+        // After take over the human's own session starts again at 0; within each session seq stays contiguous.
+        let seqs = sink.events.map(\.seq)
+        XCTAssertTrue(zip(seqs, seqs.dropFirst()).allSatisfy { $1 == $0 + 1 || $1 == 0 }, "reply events keep seq contiguous: \(seqs)")
+    }
+
+    func testModelVsModelSessionLandsInRealDB() async throws {
+        let pg = try LocalPostgres.require()
+        let c = try await playModelGame(sink: nil)
+        let id = try XCTUnwrap(c.outbox.pending.first?.sessionID).uuidString.lowercased()
+        c.outbox.sink = PGPlaySink(config: pg.config(), password: { pg.passwords["gtnwchess_mac"]! })
+        await c.outbox.flushNow()
+        XCTAssertEqual(try pg.psql("SELECT player, outcome, summary->>'spectator', summary->'matchup'->'sides'->0->>'kind' FROM play.sessions WHERE id='\(id)'",
+                                   db: "games"), "AI vs AI|taken_over|true|model")
+        XCTAssertGreaterThan(Int(try pg.psql("SELECT count(*) FROM play.events WHERE session_id='\(id)' AND kind='model_reply'", db: "games")) ?? 0, 0)
+    }
+}
+
 /// Opt-in (GTNW_LIVE_AI=1): the real fleet backends answer a coach request, and the answer passes the validator.
 @MainActor
 final class LiveAIIntegrationTests: XCTestCase {

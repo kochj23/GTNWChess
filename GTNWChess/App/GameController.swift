@@ -26,17 +26,29 @@ struct PendingPromotion: Identifiable, Equatable {
     var side: Side
 }
 
+/// One Watch side: Nova's engine (default) or a language model (backend + model) with the engine as fallback.
+struct WatchSeat: Equatable {
+    var useModel = false
+    var backend: NovaAIBackend = .auto
+    var model = ""
+}
+
 struct NewGameConfig: Equatable {
     var mode: GameMode = .vsNova
     var level: EngineLevel = .pilot
     /// Void's level in a Watch game (`level` is Solar's).
     var blackLevel: EngineLevel = .captain
+    /// Watch: each side is the engine at its level or a language model (falling back to that level).
+    var whiteSeat = WatchSeat()
+    var blackSeat = WatchSeat()
     /// "white", "black" or "random" (vs Nova / LAN host).
     var side = "white"
     var playerName = PlayerInfo.defaultName
     var opponentName = "Challenger"
     var clock: ClockConfig?
     var startFEN: String?
+    /// Gameplay RNG seed; nil = a fresh one. Fixed in tests to reproduce a game.
+    var seed: UInt64?
 }
 
 enum Prefs {
@@ -107,6 +119,10 @@ final class GameController: ObservableObject {
     private var clockTimer: Timer?
     private var lastTick = Date()
     private var startedAt = Date()
+    /// This game's gameplay RNG seed (random side, built-in engine noise); recorded in the summary.
+    private(set) var seed: UInt64 = 0
+    /// Chatter gate for AI banter and the auto coach (cosmetic RNG).
+    var chatGate = ChatGate()
 
     init(engine: EngineService = .makeDefault(), ai: NovaAI? = nil, site: GamesSiteClient = GamesSiteClient(),
          outbox: PlayOutbox? = nil, persist: Bool = !RuntimeEnv.underXCTest && !RuntimeEnv.demo) {
@@ -176,7 +192,7 @@ final class GameController: ObservableObject {
         }
         var s = "\(displayName(game.sideToMove)) (\(game.sideToMove.faction)) to move"
         if game.position.inCheck { s += " — check!" }
-        if engineThinking { s = "Nova is thinking…" }
+        if engineThinking { s = player(game.sideToMove).kind == "model" ? "\(displayName(game.sideToMove)) is thinking…" : "Nova is thinking…" }
         return s
     }
 
@@ -194,7 +210,9 @@ final class GameController: ObservableObject {
         scene.skipBattle()
         var g: Game
         if let fen = c.startFEN, let fg = try? Game(fen: fen) { g = fg } else { g = Game() }
-        let side: Side = c.side == "random" ? (Bool.random() ? .white : .black) : (c.side == "black" ? .black : .white)
+        setSeed(c.seed ?? UInt64.random(in: .min ... .max))
+        var rng = SplitMix64(state: seed)
+        let side: Side = c.side == "random" ? (rng.next() & 1 == 0 ? .white : .black) : (c.side == "black" ? .black : .white)
         mode = c.mode
         level = c.level
         let me = PlayerInfo.human(c.playerName, local: true, account: localAccount)
@@ -213,8 +231,8 @@ final class GameController: ObservableObject {
             black = side == .black ? me : .human("Challenger", local: false, account: nil)
         case .watch:
             you = "none"
-            white = .nova(c.level)
-            black = .nova(c.blackLevel)
+            white = c.whiteSeat.useModel ? .model(c.whiteSeat.backend, c.whiteSeat.model, fallback: c.level) : .nova(c.level)
+            black = c.blackSeat.useModel ? .model(c.blackSeat.backend, c.blackSeat.model, fallback: c.blackLevel) : .nova(c.blackLevel)
             lastWatchConfig = c
         }
         watchPaused = false
@@ -229,8 +247,14 @@ final class GameController: ObservableObject {
         maybeEngineMove()
     }
 
+    private func setSeed(_ s: UInt64) {
+        seed = s
+        (engine.fallback as? FallbackEngine)?.seed = s
+    }
+
     private func install(_ g: Game, clock: ChessClock?) {
         game = g
+        chatGate = ChatGate()
         gameToken = UUID()
         selected = nil
         promotion = nil
@@ -250,7 +274,7 @@ final class GameController: ObservableObject {
 
     private func beginRecording(sessionID: UUID, hostSide: String?) {
         let ctx = PlayContext(sessionID: sessionID, mode: mode, white: white, black: black, you: you, clock: clock?.config,
-                              startedAt: startedAt, startFEN: game.startsFromStandard ? nil : game.startPosition.fen)
+                              startedAt: startedAt, startFEN: game.startsFromStandard ? nil : game.startPosition.fen, seed: seed)
         recorder.begin(ctx, hostSide: hostSide)
         autosave()
     }
@@ -263,7 +287,7 @@ final class GameController: ObservableObject {
         level = s.level ?? .pilot
         you = s.you
         install(g, clock: s.clock)
-        if let r = s.recorder { recorder.resume(r); startedAt = r.context.startedAt }
+        if let r = s.recorder { recorder.resume(r); startedAt = r.context.startedAt; setSeed(r.context.seed ?? 0) }
         flipped = you == "black"
         lanInfo = s.lan
         say(g.isOver ? "Last game restored (finished)." : "Game resumed where you left off.", kind: .system, source: "GTNW Chess")
@@ -376,7 +400,10 @@ final class GameController: ObservableObject {
     private func afterPositionChange() {
         refreshHighlights()
         if UserDefaults.standard.bool(forKey: Prefs.coachAuto), !game.isOver, isLocal(game.sideToMove) || mode == .hotseat {
-            refreshCoach()
+            // Auto coach: the script always updates; the model is asked when something is happening or the gate allows.
+            let f = CoachFacts.make(game: game)
+            let notable = f.inCheck || f.mateThreat != nil || f.mateInOne != nil || !f.yourThreatened.isEmpty || game.ply < 2
+            refreshCoach(useAI: chatGate.allow("coach", ply: game.ply, personality: personality(of: game.sideToMove.opposite), notable: notable))
         }
     }
 
@@ -403,9 +430,22 @@ final class GameController: ObservableObject {
         // Watch: each side plays at its own level (stored on the player); vs Nova: the chosen level.
         let lvl = mode == .watch ? (player(game.sideToMove).level.flatMap(EngineLevel.init(rawValue:)) ?? level) : level
         let pace = mode == .watch ? min(5, max(0.2, UserDefaults.standard.double(forKey: Prefs.watchDelay))) : 0.45
+        let mover = player(game.sideToMove)
         Task {
             let started = Date()
-            let m = try? await engine.bestMove(for: snapshot, level: lvl)
+            var m: Move?
+            if mover.kind == "model" {
+                // A language model side: async network ask, validated; the engine plays the move if it never gives a legal one.
+                let (mm, replies) = await ModelPlayer(ai: self.ai).move(snapshot, player: mover)
+                guard self.gameToken == token, self.game.ply == snapshot.ply else { return }
+                for r in replies { self.recorder.modelReply(r, ply: snapshot.ply + 1) }
+                m = mm
+                if m == nil {
+                    self.say("\(mover.name) gave no legal move in \(ModelPlayer.maxAsks) tries; Nova's engine plays this one.",
+                             kind: .system, source: "GTNW Chess")
+                }
+            }
+            if m == nil { m = try? await engine.bestMove(for: snapshot, level: lvl) }
             let elapsed = Date().timeIntervalSince(started)
             if elapsed < pace { try? await Task.sleep(nanoseconds: UInt64((pace - elapsed) * 1e9)) }
             guard self.gameToken == token, self.game.ply == snapshot.ply else { return }
@@ -424,7 +464,10 @@ final class GameController: ObservableObject {
         if game.isOver, let c = lastWatchConfig { newGame(c) } else { maybeEngineMove() }
     }
 
-    /// Takes the seat of the side to move; the other side stays Nova. The watch session ends as "taken_over" and a normal one starts.
+    /// "qwen3:8b vs Nova (Captain)" for the spectator bar.
+    var matchupLabel: String { "\(whiteName) vs \(blackName)" }
+
+    /// Takes the seat of the side to move; the other side stays as it was (engine or model). The watch session ends as "taken_over" and a normal one starts.
     func takeOver() {
         guard mode == .watch, !game.isOver, !animating else { return }
         let side = game.sideToMove
@@ -440,7 +483,7 @@ final class GameController: ObservableObject {
         watchPaused = false
         flipped = side == .black
         beginRecording(sessionID: UUID(), hostSide: nil)   // from here on it's your game
-        say("You take over \(side.faction). Nova keeps \(side.opposite.faction).", kind: .system, source: "GTNW Chess")
+        say("You take over \(side.faction). \(displayName(side.opposite)) keeps \(side.opposite.faction).", kind: .system, source: "GTNW Chess")
         afterPositionChange()
     }
 
@@ -458,11 +501,18 @@ final class GameController: ObservableObject {
 
     // MARK: - Coach & commentary
 
-    func refreshCoach() {
+    /// The level personality of a side Nova's engine plays (else the default block).
+    func personality(of s: Side) -> Personality {
+        let p = player(s)
+        return Personality.of(p.kind == "human" ? nil : p.level.flatMap(EngineLevel.init(rawValue:)))
+    }
+
+    func refreshCoach(useAI: Bool = true) {
         let token = gameToken, snapshot = game, name = playerName
         let facts = CoachFacts.make(game: snapshot)
         coachText = ScriptedCoach.explain(facts, playerName: name)
         coachSource = "Built-in"
+        guard useAI else { return }
         let narrator = NovaNarrator(ai: ai)
         Task {
             let r = await narrator.coach(game: snapshot, playerName: name)
@@ -474,9 +524,16 @@ final class GameController: ObservableObject {
 
     private func requestBattleTalk(_ pm: PlayedMove) {
         let token = gameToken, snapshot = game
+        let p = personality(of: pm.side)
+        guard chatGate.allow("battle", ply: game.ply, personality: p, notable: pm.captured == .queen || pm.isCheck) else {
+            let (a, v) = Cast.battleLine(attacker: pm.movedKind, victim: pm.captured!, attackerSide: pm.side)
+            say(a + " — " + v, kind: .battle, source: "Built-in")
+            return
+        }
+        let voice = player(pm.side).kind == "nova" ? p.voice : nil
         let narrator = NovaNarrator(ai: ai)
         Task {
-            let r = await narrator.battleTalk(attacker: pm.movedKind, victim: pm.captured!, attackerSide: pm.side, game: snapshot)
+            let r = await narrator.battleTalk(attacker: pm.movedKind, victim: pm.captured!, attackerSide: pm.side, game: snapshot, voice: voice)
             guard self.gameToken == token else { return }
             self.say(r.value, kind: .battle, source: r.source.label)
         }

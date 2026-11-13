@@ -20,7 +20,7 @@ struct SettingsView: View {
             SoundSettings().tabItem { Label("Sound", systemImage: "speaker.wave.2") }
             CoachSettings().tabItem { Label("Coach", systemImage: "graduationcap") }
             GamesDBSettings(controller: controller, outbox: controller.outbox).tabItem { Label("Nova Games", systemImage: "trophy") }
-            NovaAISettingsView(ai: ai, footer: "When AI is off or no backend answers, Nova's coach, battle banter and recaps use GTNW Chess's built-in script. AI only explains and narrates: Stockfish decides every move, and any move or square the AI mentions is checked against the real position. Keys stay in the Keychain (com.jkoch.gtnwchess.*) and only go over https.")
+            NovaAISettingsView(ai: ai, footer: "When AI is off or no backend answers, Nova's coach, battle banter and recaps use GTNW Chess's built-in script. AI only explains and narrates: Stockfish decides every move, and any move or square the AI mentions is checked against the real position. Keys stay in the Keychain (com.jkoch.gtnwchess.*) and only go over https. Turn off Allow Nova to run with no Nova dependency at all; Watch's language-model sides then use the other backends (local Ollama/MLX first, cloud only with your key).")
                 .tabItem { Label("AI", systemImage: "sparkles") }
             AcknowledgementsView().tabItem { Label("About", systemImage: "info.circle") }
         }

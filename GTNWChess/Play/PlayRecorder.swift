@@ -17,11 +17,14 @@ enum GameMode: String, Codable, Sendable { case vsNova = "vs_nova", hotseat, lan
 
 struct PlayerInfo: Codable, Equatable, Sendable {
     var name: String
-    var kind: String          // "human" | "nova"
+    var kind: String          // "human" | "nova" | "model" (a language model; `level` is its engine fallback)
     var level: Int?
     var levelName: String?
     var local: Bool
     var account: String?
+    /// kind "model": NovaAIBackend rawValue ("auto" = the AI settings) and model id (nil = the backend's model).
+    var backend: String? = nil
+    var model: String? = nil
 
     static func human(_ name: String, local: Bool, account: String?) -> PlayerInfo {
         PlayerInfo(name: PlayerInfo.clean(name), kind: "human", level: nil, levelName: nil, local: local, account: account)
@@ -64,8 +67,28 @@ struct PlayContext: Codable, Equatable, Sendable {
     var clock: ClockConfig?
     var startedAt: Date
     var startFEN: String?
+    /// The game's gameplay RNG seed (SplitMix64; nil for games recorded before 1.1).
+    var seed: UInt64? = nil
+
+    static func seedString(_ s: UInt64?) -> Any { s.map { String(format: "%016llx", $0) as Any } ?? NSNull() }
 
     func player(_ s: Side) -> PlayerInfo { s == .white ? white : black }
+}
+
+/// One language-model answer for a move (Watch model-vs-model). Recorded as a `model_reply` event so replays and
+/// journals read the record and never re-call a model (after Quake III Com_InitJournaling: the journal of external
+/// inputs is the source of truth). `fallback`: this was the last failed ask and the engine played.
+struct ModelReply: Equatable, Sendable {
+    var side: Side
+    var backend: String
+    var model: String?
+    var reply: String
+    var latencyMs: Int
+    var attempt: Int
+    var san: String?
+    var error: String?
+    var fallback = false
+    var valid: Bool { san != nil }
 }
 
 struct LiveEvent: Codable, Equatable, Sendable {
@@ -86,8 +109,25 @@ enum PlayReport {
     static func r2(_ x: Double) -> Double { (x * 100).rounded() / 100 }
 
     static func playerJSON(_ p: PlayerInfo) -> [String: Any] {
-        ["name": p.name, "kind": p.kind, "level": p.level.map { $0 as Any } ?? NSNull(),
-         "level_name": p.levelName.map { $0 as Any } ?? NSNull(), "local": p.local, "account": p.account.map { $0 as Any } ?? NSNull()]
+        var d: [String: Any] = ["name": p.name, "kind": p.kind, "level": p.level.map { $0 as Any } ?? NSNull(),
+                                "level_name": p.levelName.map { $0 as Any } ?? NSNull(), "local": p.local,
+                                "account": p.account.map { $0 as Any } ?? NSNull()]
+        if p.kind == "model" { d["backend"] = p.backend ?? NSNull(); d["model"] = p.model ?? NSNull() }
+        return d
+    }
+
+    /// Printable, one line, ≤ 80 chars: what a model said, never the whole reply.
+    static func excerpt(_ s: String) -> String {
+        let t = s.unicodeScalars.map { CharacterSet.controlCharacters.contains($0) ? " " : String($0) }.joined()
+        return String(t.trimmingCharacters(in: .whitespaces).prefix(80))
+    }
+
+    static func modelReplyEvent(_ r: ModelReply, ply: Int, seq: Int, at: Date) -> PlayEventRecord {
+        PlayEventRecord(seq: seq, kind: "model_reply", detail: json([
+            "ply": ply, "side": r.side.name, "backend": r.backend, "model": r.model.map { $0 as Any } ?? NSNull(),
+            "excerpt": excerpt(r.reply), "latency_ms": r.latencyMs, "attempt": r.attempt, "valid": r.valid,
+            "san": r.san.map { $0 as Any } ?? NSNull(), "error": r.error.map { excerpt($0) as Any } ?? NSNull(), "fallback": r.fallback,
+        ]), ts: at)
     }
 
     static func clockJSON(_ c: ClockConfig?) -> Any {
@@ -99,7 +139,7 @@ enum PlayReport {
         return PlayEventRecord(seq: 0, kind: "game_start", detail: json([
             "mode": ctx.mode.rawValue, "white": ctx.white.name, "black": ctx.black.name, "white_kind": ctx.white.kind,
             "black_kind": ctx.black.kind, "level": level.map { $0 as Any } ?? NSNull(), "clock": clockJSON(ctx.clock),
-            "start_fen": ctx.startFEN.map { $0 as Any } ?? NSNull(),
+            "start_fen": ctx.startFEN.map { $0 as Any } ?? NSNull(), "seed": PlayContext.seedString(ctx.seed),
         ]), ts: at)
     }
 
@@ -158,7 +198,7 @@ enum PlayReport {
     static let watchPlayer = "AI vs AI"
 
     static func summary(_ game: Game, _ ctx: PlayContext, analysis: GameAnalysis?, opening: Opening, white: String, black: String,
-                        duration: TimeInterval, takebacks: Int) -> Data {
+                        duration: TimeInterval, takebacks: Int, fallbacks: [String: Int] = [:]) -> Data {
         let r = game.result
         var s: [String: Any] = [
             "mode": ctx.mode.rawValue,
@@ -177,15 +217,21 @@ enum PlayReport {
             "material_graph": Array(game.materialGraph.prefix(400)),
             "notable": notable(game, takebacks: takebacks),
             "takebacks": takebacks,
+            "seed": PlayContext.seedString(ctx.seed),
         ]
         s["pgn"] = String(PGN.export(game, white: white, black: black, date: ctx.startedAt).prefix(40_000))
         if ctx.mode == .watch {
             s["spectator"] = true
             s["matchup"] = ["sides": [Side.white, .black].map { side -> [String: Any] in
                 let p = ctx.player(side)
+                if p.kind == "model" {
+                    return ["side": side.name, "kind": "model", "backend": p.backend ?? NSNull(), "model": p.model ?? NSNull(), "label": p.name]
+                }
                 return ["side": side.name, "kind": "engine", "backend": NSNull(), "model": NSNull(),
                         "label": "Nova engine" + (p.levelName.map { " (\($0))" } ?? "")]
             }]
+            let models = [Side.white, .black].filter { ctx.player($0).kind == "model" }
+            if !models.isEmpty { s["fallbacks"] = Dictionary(uniqueKeysWithValues: models.map { ($0.name, fallbacks[$0.name] ?? 0) }) }
         }
         if let a = analysis {
             func st(_ x: SideStats) -> [String: Any] {
@@ -250,6 +296,8 @@ final class PlayRecorder {
     private(set) var seq = 0
     private(set) var takebacks = 0
     private(set) var ended = false
+    /// Watch: per side, how often the engine played because a model gave no legal move.
+    private(set) var fallbacks: [String: Int] = [:]
     var now: () -> Date = Date.init
 
     /// False for a LAN guest (the host writes the one session for the game).
@@ -259,14 +307,15 @@ final class PlayRecorder {
 
     init(outbox: PlayOutbox) { self.outbox = outbox }
 
-    struct State: Codable, Equatable { var context: PlayContext; var seq: Int; var takebacks: Int; var hostSide: String? }
-    var state: State? { context.map { State(context: $0, seq: seq, takebacks: takebacks, hostSide: hostSide) } }
+    struct State: Codable, Equatable { var context: PlayContext; var seq: Int; var takebacks: Int; var hostSide: String?; var fallbacks: [String: Int]? }
+    var state: State? { context.map { State(context: $0, seq: seq, takebacks: takebacks, hostSide: hostSide, fallbacks: fallbacks) } }
 
     func begin(_ ctx: PlayContext, hostSide: String? = nil) {
         context = ctx
         self.hostSide = hostSide
         seq = 0
         takebacks = 0
+        fallbacks = [:]
         ended = false
         guard isEnabled else { return }
         outbox.enqueue(.start(id: ctx.sessionID, startedAt: ctx.startedAt, player: ctx.mode == .watch ? PlayReport.watchPlayer : nil))
@@ -280,7 +329,16 @@ final class PlayRecorder {
         seq = s.seq
         takebacks = s.takebacks
         hostSide = s.hostSide
+        fallbacks = s.fallbacks ?? [:]
         ended = false
+    }
+
+    /// A model's answer for the move at `ply` (and the fallback count when the engine had to play it).
+    func modelReply(_ r: ModelReply, ply: Int) {
+        guard isEnabled, !ended, let ctx = context else { return }
+        if r.fallback { fallbacks[r.side.name, default: 0] += 1 }
+        outbox.enqueue(.events(id: ctx.sessionID, events: [PlayReport.modelReplyEvent(r, ply: ply, seq: seq, at: now())], actions: ply - 1))
+        seq += 1
     }
 
     func played(_ pm: PlayedMove, game: Game) {
@@ -310,7 +368,7 @@ final class PlayRecorder {
             outbox.enqueue(.events(id: ctx.sessionID, events: Array(evs[chunk..<min(evs.count, chunk + 50)]), actions: game.moves.count))
         }
         let summary = PlayReport.summary(game, ctx, analysis: analysis, opening: opening, white: white, black: black,
-                                         duration: t.timeIntervalSince(ctx.startedAt), takebacks: takebacks)
+                                         duration: t.timeIntervalSince(ctx.startedAt), takebacks: takebacks, fallbacks: fallbacks)
         outbox.enqueue(.end(id: ctx.sessionID, startedAt: ctx.startedAt,
                             end: PlaySessionEnd(outcome: PlayReport.outcome(game, ctx), score: PlayReport.score(ctx, analysis),
                                                 actions: game.moves.count, summary: summary, endedAt: t,
@@ -323,7 +381,7 @@ final class PlayRecorder {
         ended = true
         let t = now()
         let summary = PlayReport.summary(game, ctx, analysis: nil, opening: Opening(eco: "-", name: "Taken over"), white: white, black: black,
-                                         duration: t.timeIntervalSince(ctx.startedAt), takebacks: takebacks)
+                                         duration: t.timeIntervalSince(ctx.startedAt), takebacks: takebacks, fallbacks: fallbacks)
         outbox.enqueue(.end(id: ctx.sessionID, startedAt: ctx.startedAt,
                             end: PlaySessionEnd(outcome: "taken_over", score: nil, actions: game.moves.count, summary: summary,
                                                 endedAt: t, player: PlayReport.watchPlayer)))

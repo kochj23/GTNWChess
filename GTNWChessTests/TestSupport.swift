@@ -134,6 +134,21 @@ enum TestEnv {
         StubHTTP.json(["model": "qwen3:8b", "message": ["role": "assistant", "content": text], "done": true])
     }
 
+    /// The first move of the "Legal moves:" line in a ModelPlayer prompt (a stub model that always plays legally).
+    nonisolated static func firstLegal(_ body: Data) -> String {
+        let s = String(decoding: body, as: UTF8.self)
+        guard let r = s.range(of: "Legal moves: ") else { return "??" }
+        return String(s[r.upperBound...].prefix { $0 != "," && $0 != "\\" && $0 != "\n" })
+    }
+
+    /// A Watch config whose sides are stub models (`white`/`black` true) on the stubbed Ollama, or the engine.
+    static func watch(white: Bool, black: Bool, backend: NovaAIBackend = .ollama, model: String = "qwen3:8b") -> NewGameConfig {
+        var cfg = NewGameConfig(); cfg.mode = .watch; cfg.level = .cadet; cfg.blackLevel = .cadet
+        cfg.whiteSeat = WatchSeat(useModel: white, backend: backend, model: model)
+        cfg.blackSeat = WatchSeat(useModel: black, backend: backend, model: model)
+        return cfg
+    }
+
     @discardableResult
     static func play(_ c: GameController, _ sans: [String]) -> Bool {
         for s in sans {
@@ -142,6 +157,9 @@ enum TestEnv {
         return true
     }
 }
+
+/// Counts stub calls across threads.
+final class StubCounter: @unchecked Sendable { let l = NSLock(); var n = 0; func next() -> Int { l.withLock { n += 1; return n } } }
 
 /// Polls `cond` on the main actor until true or `timeout`.
 @MainActor

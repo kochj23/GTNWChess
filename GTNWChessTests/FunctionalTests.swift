@@ -99,6 +99,66 @@ final class FunctionalTests: XCTestCase {
         XCTAssertNil(p, "recorded under your own name")
     }
 
+    func testEngineVsModelPlaysRecordsRepliesAndShowsTheModel() async throws {
+        UserDefaults.standard.set(0.2, forKey: Prefs.watchDelay)
+        defer { UserDefaults.standard.removeObject(forKey: Prefs.watchDelay) }
+        StubHTTP.respond { r in
+            r.url.path.hasSuffix("/api/chat") ? (200, TestEnv.ollamaReply(TestEnv.firstLegal(r.body))) : (200, StubHTTP.json(["models": []]))
+        }
+        let c = TestEnv.controller(ai: TestEnv.stubbedAI())
+        c.newGame(TestEnv.watch(white: false, black: true))
+        XCTAssertEqual(c.blackName, "qwen3:8b", "the model's name is on the board")
+        XCTAssertEqual(c.matchupLabel, "Nova (Cadet) vs qwen3:8b")
+        let ok = await waitUntil(20) { c.game.ply >= 4 }; XCTAssertTrue(ok, "engine and model take turns")
+        let replies = c.outbox.pending.flatMap(\.eventRecords).filter { $0.kind == "model_reply" }.map { jsonObject($0.detail) }
+        XCTAssertGreaterThanOrEqual(replies.count, 2)
+        XCTAssertTrue(replies.allSatisfy { $0["side"] as? String == "black" && $0["valid"] as? Bool == true && $0["latency_ms"] is Int })
+        XCTAssertEqual(replies.first?["backend"] as? String, "ollama")
+        XCTAssertEqual(c.game.moves[1].san, replies.first?["san"] as? String, "the recorded reply is the move played")
+    }
+
+    func testModelThatNeverAnswersLegallyFallsBackAndIsCounted() async throws {
+        UserDefaults.standard.set(0.2, forKey: Prefs.watchDelay)
+        defer { UserDefaults.standard.removeObject(forKey: Prefs.watchDelay) }
+        StubHTTP.respond { r in
+            r.url.path.hasSuffix("/api/chat") ? (200, TestEnv.ollamaReply("Let me think about it.")) : (200, StubHTTP.json(["models": []]))
+        }
+        let c = TestEnv.controller(ai: TestEnv.stubbedAI())
+        c.newGame(TestEnv.watch(white: true, black: false))
+        let ok = await waitUntil(20) { c.game.ply >= 1 }; XCTAssertTrue(ok, "the engine played the model's move")
+        XCTAssertEqual(c.recorder.fallbacks["white"], 1)
+        XCTAssertTrue(c.feed.contains { $0.text.contains("no legal move") })
+        c.setWatchPaused(true)
+        _ = await waitUntil(5) { !c.engineThinking }
+        c.takeOver()   // ends the watch session with the counts
+        guard case .end(_, _, let end)? = c.outbox.pending.first(where: { $0.kindName == "end" }) else { return XCTFail() }
+        let s = jsonObject(end.summary)
+        XCTAssertEqual(end.outcome, "taken_over")
+        XCTAssertGreaterThanOrEqual((s["fallbacks"] as? [String: Int])?["white"] ?? 0, 1)
+        let flags = c.outbox.pending.flatMap(\.eventRecords).filter { $0.kind == "model_reply" }.map { jsonObject($0.detail)["fallback"] as? Bool }
+        XCTAssertEqual(flags.prefix(3), [false, false, true])
+    }
+
+    func testTakeOverAgainstAModelKeepsTheModelPlaying() async throws {
+        UserDefaults.standard.set(0.2, forKey: Prefs.watchDelay)
+        defer { UserDefaults.standard.removeObject(forKey: Prefs.watchDelay) }
+        StubHTTP.respond { r in
+            r.url.path.hasSuffix("/api/chat") ? (200, TestEnv.ollamaReply(TestEnv.firstLegal(r.body))) : (200, StubHTTP.json(["models": []]))
+        }
+        let c = TestEnv.controller(ai: TestEnv.stubbedAI())
+        c.newGame(TestEnv.watch(white: true, black: true))
+        c.setWatchPaused(true)
+        _ = await waitUntil(10) { !c.engineThinking }
+        let side = c.game.sideToMove
+        c.takeOver()
+        XCTAssertEqual(c.mode, .vsNova)
+        XCTAssertEqual(c.player(side.opposite).kind, "model", "the other side keeps its model")
+        let before = c.game.ply
+        let legal = c.game.position.legalMoves()
+        XCTAssertNotNil(c.commit(legal[0], source: .local))
+        let replied = await waitUntil(15) { c.game.ply == before + 2 }; XCTAssertTrue(replied, "the model answers your move")
+    }
+
     func testVsNovaAsBlackEngineOpens() async {
         let c = TestEnv.controller()
         var cfg = NewGameConfig(); cfg.mode = .vsNova; cfg.level = .scout; cfg.side = "black"

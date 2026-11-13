@@ -183,4 +183,43 @@ final class RetryTests: XCTestCase {
         XCTAssertEqual(sleeps.delays, [0.01, 0.02])
         s.stop()
     }
+
+    // MARK: Model vs model: re-ask with the error, then the engine
+
+    func testModelInvalidThenValidIsReaskedWithTheError() async {
+        let ai = TestEnv.stubbedAI()
+        let count = StubCounter()
+        StubHTTP.respond { r in
+            guard r.url.path.hasSuffix("/api/chat") else { return (200, StubHTTP.json(["models": []])) }
+            return (200, TestEnv.ollamaReply(count.next() == 1 ? "Qh5, obviously" : "e4"))
+        }
+        let (m, replies) = await ModelPlayer(ai: ai).move(Game(), player: .model(.ollama, "qwen3:8b", fallback: .cadet))
+        XCTAssertEqual(m?.uci, "e2e4")
+        XCTAssertEqual(replies.map(\.valid), [false, true])
+        XCTAssertEqual(replies.map(\.attempt), [1, 2])
+        XCTAssertFalse(replies.contains { $0.fallback })
+        let second = String(decoding: StubHTTP.requests.filter { $0.url.path.hasSuffix("/api/chat") }.last!.body, as: UTF8.self)
+        XCTAssertTrue(second.contains("rejected"), "the retry tells the model what was wrong")
+        XCTAssertTrue(second.contains("Qh5"))
+    }
+
+    func testThreeInvalidRepliesHandTheMoveToTheEngine() async {
+        let ai = TestEnv.stubbedAI()
+        StubHTTP.respond { r in
+            r.url.path.hasSuffix("/api/chat") ? (200, TestEnv.ollamaReply("I think I'll resign.")) : (200, StubHTTP.json(["models": []]))
+        }
+        let (m, replies) = await ModelPlayer(ai: ai).move(Game(), player: .model(.ollama, "qwen3:8b", fallback: .cadet))
+        XCTAssertNil(m)
+        XCTAssertEqual(replies.count, ModelPlayer.maxAsks, "asked once plus 2 re-asks")
+        XCTAssertEqual(replies.map(\.fallback), [false, false, true])
+    }
+
+    func testBackendDownCountsAsFailedAsksNotACrash() async {
+        let ai = TestEnv.stubbedAI()
+        StubHTTP.respond { _ in (500, StubHTTP.json(["error": "down"])) }
+        let (m, replies) = await ModelPlayer(ai: ai).move(Game(), player: .model(.ollama, "qwen3:8b", fallback: .cadet))
+        XCTAssertNil(m)
+        XCTAssertEqual(replies.count, 3)
+        XCTAssertTrue(replies.allSatisfy { $0.error != nil && $0.san == nil })
+    }
 }

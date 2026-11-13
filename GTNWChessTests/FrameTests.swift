@@ -231,3 +231,34 @@ final class FrameTests: XCTestCase {
         }
     }
 }
+
+@MainActor
+final class WatchUIStateTests: XCTestCase {
+    override func tearDown() { StubHTTP.reset() }
+
+    func testSpectatorStateShowsModelNamesAndThinkingLine() async {
+        let c = TestEnv.controller(ai: TestEnv.stubbedAI())
+        StubHTTP.respond { _ in (500, StubHTTP.json(["error": "slow"])) }
+        var cfg = TestEnv.watch(white: true, black: false, model: "llama3.3")
+        cfg.blackLevel = .scout
+        c.newGame(cfg)
+        XCTAssertEqual(c.whiteName, "llama3.3")
+        XCTAssertEqual(c.blackName, "Nova (Scout)")
+        XCTAssertEqual(c.matchupLabel, "llama3.3 vs Nova (Scout)")
+        XCTAssertEqual(c.player(.white).kind, "model")
+        XCTAssertFalse(c.canInteract)
+        XCTAssertFalse(c.canUndo)
+        if c.engineThinking { XCTAssertEqual(c.statusLine, "llama3.3 is thinking…", "names the model, not Nova") }
+        c.setWatchPaused(true)
+        XCTAssertTrue(c.watchPaused)
+        c.setWatchPaused(false)
+        XCTAssertFalse(c.watchPaused)
+    }
+
+    func testEngineOnlyWatchStillReadsNova() {
+        let c = TestEnv.controller()
+        c.newGame(TestEnv.watch(white: false, black: false))
+        XCTAssertEqual(c.matchupLabel, "Nova (Cadet) vs Nova (Cadet)")
+        XCTAssertEqual(c.player(.white).kind, "nova")
+    }
+}

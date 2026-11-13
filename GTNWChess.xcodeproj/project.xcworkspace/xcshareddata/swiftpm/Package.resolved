@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kochj23/NovaAIKit.git",
       "state" : {
-        "revision" : "e556e454c7544090680fb9a817fe933a4bd2d6b7",
-        "version" : "1.0.0"
+        "revision" : "d9fad8ce3a5ae42541be6884f2fd083955942f79",
+        "version" : "1.1.0"
       }
     }
   ],

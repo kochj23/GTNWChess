@@ -157,14 +157,25 @@ final class SecurityTests: XCTestCase {
     /// No API keys, private keys, passwords or household names in the shipped sources.
     func testSourcesHoldNoSecretsOrHouseholdNames() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("GTNWChess")
-        let files = try XCTUnwrap(FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)).compactMap { $0 as? URL }
-            .filter { ["swift", "plist", "txt"].contains($0.pathExtension) }
-        XCTAssertGreaterThan(files.count, 20)
+        // The test runner can block forever on a network volume macOS won't let it read: read off-thread, time-bound,
+        // and skip (the same scan is run by hand before release) rather than hang the suite.
+        let read = DispatchSemaphore(value: 0)
+        final class Box: @unchecked Sendable { var texts: [(String, String)] = [] }
+        let box = Box()
+        Thread.detachNewThread {
+            let files = (FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?.allObjects ?? []).compactMap { $0 as? URL }
+                .filter { ["swift", "plist", "txt"].contains($0.pathExtension) }
+            box.texts = files.compactMap { f in (try? String(contentsOf: f, encoding: .utf8)).map { (f.lastPathComponent, $0) } }
+            read.signal()
+        }
+        guard read.wait(timeout: .now() + 60) == .success, case let texts = box.texts, !texts.isEmpty else {
+            throw XCTSkip("sources unreadable from the test runner (\(root.path)); scan them by hand")
+        }
+        XCTAssertGreaterThan(texts.count, 20)
         let patterns = [#"sk-or-v1-[A-Za-z0-9]{16}"#, #"sk-[A-Za-z0-9]{32}"#, "BEGIN (RSA |EC )?PRIVATE KEY", #"password\s*=\s*"[^"]{6,}""#,
                         #"\b"# + String(decoding: Data(base64Encoded: "QW15")!, as: UTF8.self) + #"\b"#]  // a household name, kept out of this public repo
-        for f in files {
-            let text = try String(contentsOf: f, encoding: .utf8)
-            for p in patterns { XCTAssertNil(text.range(of: p, options: .regularExpression), "\(p) in \(f.lastPathComponent)") }
+        for (name, text) in texts {
+            for p in patterns { XCTAssertNil(text.range(of: p, options: .regularExpression), "\(p) in \(name)") }
         }
     }
 
@@ -189,6 +200,44 @@ final class SecurityAIReplyTests: XCTestCase {
             XCTAssertFalse(r.isAI, reply)
             XCTAssertEqual(r.value, ScriptedCoach.explain(CoachFacts.make(game: g), playerName: "Tester"))
         }
+    }
+
+    /// A cloud model side: its key goes only in the https Authorization header, never into events, summaries or the feed.
+    func testModelSideKeyNeverInRecordsOrFeed() async throws {
+        UserDefaults.standard.set(0.2, forKey: Prefs.watchDelay)
+        defer { UserDefaults.standard.removeObject(forKey: Prefs.watchDelay) }
+        let key = "test-key-0123456789-never-recorded"
+        let ai = TestEnv.stubbedAI()
+        XCTAssertTrue(ai.setAPIKey(key, for: .openRouter))
+        StubHTTP.respond { r in
+            r.url.path.hasSuffix("/chat/completions")
+                ? (200, StubHTTP.json(["model": "m", "choices": [["message": ["role": "assistant", "content": "Kz9"]]]]))   // never legal
+                : (200, StubHTTP.json(["data": []]))
+        }
+        let c = TestEnv.controller(ai: ai)
+        c.newGame(TestEnv.watch(white: true, black: false, backend: .openRouter, model: "anthropic/claude-sonnet-4.5"))
+        let ok = await waitUntil(20) { c.game.ply >= 1 }; XCTAssertTrue(ok, "falls back to the engine")
+        c.setWatchPaused(true)
+        _ = await waitUntil(5) { !c.engineThinking }
+        c.takeOver()
+        let chat = StubHTTP.requests.filter { $0.url.path.hasSuffix("/chat/completions") }
+        XCTAssertFalse(chat.isEmpty)
+        XCTAssertTrue(chat.allSatisfy { $0.url.scheme == "https" && $0.headers["Authorization"] == "Bearer \(key)" })
+        XCTAssertFalse(chat.contains { String(decoding: $0.body, as: UTF8.self).contains(key) }, "never in the prompt")
+        var recorded = c.outbox.pending.flatMap(\.eventRecords).map { String(decoding: $0.detail, as: UTF8.self) }
+        for case .end(_, _, let e) in c.outbox.pending { recorded.append(String(decoding: e.summary, as: UTF8.self)) }
+        recorded += c.feed.map(\.text) + [c.coachText, c.statusLine]
+        XCTAssertTrue(recorded.contains { $0.contains("model_reply") || $0.contains("anthropic/claude") }, "the records were checked")
+        XCTAssertFalse(recorded.contains { $0.contains(key) || $0.contains("Bearer") })
+    }
+
+    func testModelReplyExcerptIsClippedAndPrintable() {
+        let r = ModelReply(side: .white, backend: "ollama", model: "m", reply: "e4\n" + String(repeating: "A", count: 5000) + "\u{0007}",
+                           latencyMs: 1, attempt: 1, san: "e4")
+        let d = jsonObject(PlayReport.modelReplyEvent(r, ply: 1, seq: 1, at: Date()).detail)
+        let ex = d["excerpt"] as? String ?? ""
+        XCTAssertLessThanOrEqual(ex.count, 80)
+        XCTAssertFalse(ex.contains("\n"))
     }
 
     func testValidatorAnchorRule() throws {

@@ -9,8 +9,29 @@
 
 import Foundation
 
+/// Gameplay RNG: our own seeded SplitMix64, kept apart from the cosmetic RNG (battle effects, piece idles and chatter
+/// use system random). After Doom's P_Random (gameplay) vs M_Random (menus/effects): the game's seed is stored in the
+/// play summary, so the built-in engine's choices for a game can be reproduced. Stockfish's own skill randomness is
+/// internal to Stockfish and not covered.
+struct SplitMix64: RandomNumberGenerator {
+    var state: UInt64
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+    /// Stable across runs (Swift's Hasher is not): FNV-1a.
+    static func hash(_ s: String) -> UInt64 {
+        s.utf8.reduce(0xCBF2_9CE4_8422_2325) { ($0 ^ UInt64($1)) &* 0x0000_0100_0000_01B3 }
+    }
+}
+
 final class FallbackEngine: ChessEngine, @unchecked Sendable {
     var name: String { "GTNW built-in engine" }
+    /// The current game's gameplay seed (set by the controller per game).
+    var seed: UInt64 = 0
 
     static let values: [Int] = [100, 320, 330, 500, 900, 0]
     /// Piece-square bonus: centralisation for N/B/Q, advancement for pawns, king safety (castled corners) for K.
@@ -44,7 +65,8 @@ final class FallbackEngine: ChessEngine, @unchecked Sendable {
             guard let mv = pos.move(uci: m) else { throw EngineError.badInput("move") }
             pos.make(mv)
         }
-        guard let m = Self.search(pos, depth: level.fallbackDepth, noise: level.rawValue <= 2 ? 60 : level.rawValue <= 4 ? 20 : 0) else {
+        let p = Personality.of(level)
+        guard let m = Self.search(pos, depth: level.fallbackDepth, noise: p.noise, aggression: p.aggression, seed: seed) else {
             throw EngineError.noMove
         }
         return m.uci
@@ -73,16 +95,19 @@ final class FallbackEngine: ChessEngine, @unchecked Sendable {
 
     func shutdown() async {}
 
-    static func search(_ pos: Position, depth: Int, noise: Int) -> Move? {
+    static func search(_ pos: Position, depth: Int, noise: Int, aggression: Double = 0, seed: UInt64 = 0) -> Move? {
         let legal = pos.legalMoves()
         guard !legal.isEmpty else { return nil }
+        var rng = SplitMix64(state: seed ^ SplitMix64.hash(pos.fen))   // same seed + position = same choice
+        let bonus = Int(aggression * 25)
         var p = pos
         var scored: [(Move, Int)] = []
         for m in ordered(legal, pos) {
             let u = p.make(m)
             var s = -negamax(&p, depth - 1, -1_000_000, 1_000_000)
             p.unmake(m, u)
-            if noise > 0 { s += Int.random(in: -noise...noise) }
+            if noise > 0 { s += Int.random(in: -noise...noise, using: &rng) }
+            if bonus > 0, m.isCapture || p.applying(m).inCheck { s += bonus }
             scored.append((m, s))
         }
         return scored.max { $0.1 < $1.1 }?.0

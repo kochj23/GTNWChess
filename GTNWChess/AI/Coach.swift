@@ -286,7 +286,8 @@ struct NovaNarrator {
         return await ai.text(req, validate: { try validator.validate($0, requireAnchor: true) }, fallback: { scripted })
     }
 
-    func battleTalk(attacker: PieceKind, victim: PieceKind, attackerSide: Side, game: Game) async -> NovaAIResult<String> {
+    /// `voice`: the attacking side's level personality when Nova's engine plays it (data from `Personality`).
+    func battleTalk(attacker: PieceKind, victim: PieceKind, attackerSide: Side, game: Game, voice: String? = nil) async -> NovaAIResult<String> {
         let (a, v) = Cast.battleLine(attacker: attacker, victim: victim, attackerSide: attackerSide)
         let scripted = a + " — " + v
         let facts = CoachFacts.make(game: game)
@@ -297,7 +298,8 @@ struct NovaNarrator {
             Write one line of trash talk from the attacker and one short last word from the victim, on a single line \
             separated by " — ". At most 30 words total. Playful, no gore.
             """
-        let req = NovaAIRequest(prompt: prompt, system: NovaPersona.system("You voice the robot pieces' battle banter."),
+        let rules = "You voice the robot pieces' battle banter." + (voice.map { " The attacking side is Nova playing as \($0)." } ?? "")
+        let req = NovaAIRequest(prompt: prompt, system: NovaPersona.system(rules),
                                 temperature: 0.9, maxTokens: 90)
         return await ai.text(req, validate: { try validator.validate($0, requireAnchor: true) }, fallback: { scripted })
     }

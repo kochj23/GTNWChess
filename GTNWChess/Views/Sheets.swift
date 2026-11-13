@@ -5,6 +5,7 @@
 //  New game, LAN host/join, Nova Games sign-in and FEN sheets.
 //
 
+import NovaAIKit
 import SwiftUI
 
 struct NewGameSheet: View {
@@ -19,18 +20,14 @@ struct NewGameSheet: View {
             Picker("Mode", selection: $c.mode) {
                 Text("vs Nova").tag(GameMode.vsNova)
                 Text("Hot-seat (2 players, this Mac)").tag(GameMode.hotseat)
-                Text("Watch Nova vs Nova").tag(GameMode.watch)
+                Text("Watch AI vs AI").tag(GameMode.watch)
             }
             .accessibilityIdentifier("modePicker")
             if c.mode != .watch { TextField("Your name", text: $c.playerName) }
             if c.mode == .watch {
-                Picker("Solar Nova (white)", selection: $c.level) {
-                    ForEach(EngineLevel.allCases) { l in Text("\(l.rawValue). \(l.name)").tag(l) }
-                }
-                Picker("Void Nova (black)", selection: $c.blackLevel) {
-                    ForEach(EngineLevel.allCases) { l in Text("\(l.rawValue). \(l.name)").tag(l) }
-                }
-                Text("Sit back: Nova plays both sides, a new game starts after each one, and nothing is recorded. Pause or take over a side from the panel.")
+                WatchSeatPicker(ai: controller.ai, title: "Solar (white)", seat: $c.whiteSeat, level: $c.level)
+                WatchSeatPicker(ai: controller.ai, title: "Void (black)", seat: $c.blackSeat, level: $c.blackLevel)
+                Text("Sit back: each side is Nova's engine or a language model (a model that gives no legal move in 3 tries has the engine play that move). A new game starts after each one. Recorded as \"AI vs AI\", never in anyone's stats. Pause or take over a side from the panel.")
                     .font(.caption).foregroundStyle(.secondary)
             } else if c.mode == .vsNova {
                 Picker("Nova's level", selection: $c.level) {
@@ -68,6 +65,25 @@ struct NewGameSheet: View {
         .frame(width: 460)
         .padding()
         .onAppear { c.playerName = Prefs.playerDisplayName; c.level = controller.level }
+    }
+}
+
+/// One Watch side: "Nova engine (level)" or a language model via the kit's backend + model picker.
+struct WatchSeatPicker: View {
+    let ai: NovaAI
+    let title: String
+    @Binding var seat: WatchSeat
+    @Binding var level: EngineLevel
+
+    var body: some View {
+        Picker(title, selection: $seat.useModel) {
+            Text("Nova engine").tag(false); Text("Language model").tag(true)
+        }
+        .accessibilityIdentifier("seat-\(title)")
+        if seat.useModel { NovaAIModelPicker(ai: ai, title: "\(title) AI", backend: $seat.backend, model: $seat.model) }
+        Picker(seat.useModel ? "\(title) fallback engine" : "\(title) level", selection: $level) {
+            ForEach(EngineLevel.allCases) { l in Text("\(l.rawValue). \(l.name)").tag(l) }
+        }
     }
 }
 
