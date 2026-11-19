@@ -107,6 +107,8 @@ final class GameController: ObservableObject {
     @Published private(set) var waitingForGuest = false
     @Published private(set) var lanNote: String?
     @Published private(set) var gameToken = UUID()
+    /// Set when the saved game could not be resumed and was moved aside; shown once as an alert.
+    @Published var saveNotice: String?
 
     let scene: BoardScene
     let engine: EngineService
@@ -279,8 +281,14 @@ final class GameController: ObservableObject {
         autosave()
     }
 
-    func resumeSaved() -> Bool {
-        guard persist, let s = GameStore.load(), let g = try? s.restore() else { return false }
+    func resumeSaved(from url: URL = GameStore.url) -> Bool {
+        guard persist else { return false }
+        let loaded: SavedGame?
+        do { loaded = try GameStore.load(from: url) } catch {
+            saveNotice = error.localizedDescription
+            return false
+        }
+        guard let s = loaded, let g = try? s.restore() else { return false }
         mode = s.mode
         white = s.white
         black = s.black

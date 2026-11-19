@@ -14,6 +14,15 @@ import NovaAIKit
 final class SecurityTests: XCTestCase {
     override func tearDown() { StubHTTP.reset() }
 
+    func testOversizedOrForeignSaveIsRejectedBeforeParsing() {
+        XCTAssertThrowsError(try GameStore.decode(Data(count: GameStore.maxBytes))) {
+            guard case .unreadable = $0 as? SaveLoadError else { return XCTFail("\($0)") }
+        }
+        for bad in [#"[1,2]"#, #"{"version":"1"}"#, #"{"version":0}"#, #"{"version":-3}"#] {
+            XCTAssertThrowsError(try GameStore.decode(Data(bad.utf8)), bad)
+        }
+    }
+
     func testKeychainServicesAreNamespaced() {
         for b in [NovaAIBackend.openRouter, .openAI, .openWebUI] {
             XCTAssertTrue(AppAI.configuration.keychainService(for: b).hasPrefix("com.jkoch.gtnwchess."), b.rawValue)

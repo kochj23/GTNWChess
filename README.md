@@ -61,6 +61,9 @@ AI versus AI, narrated by Nova (an AI voice). Two local models play each other; 
 - **Modes:** play Nova at 8 levels (Cadet to Supernova), hot-seat on one Mac, LAN play between two Macs, or
   **Watch** an AI-vs-AI game: Nova's engine or any language model on each side (model vs model, engine vs model).
   The current game saves itself and resumes at the next launch. All state stays inside the app's container.
+  Saves from older versions are migrated forward. A save from a newer version of GTNW Chess, or one that is damaged,
+  is never deleted: it is moved aside to `current-game.unreadable-<date>.json` in the same folder, the app tells you
+  where it went, and a new game starts.
 - **Learning tools:**
   - Legal-move dots and highlighting of pieces under attack.
   - Hints (⌘H) and takebacks (⌘Z).
@@ -420,12 +423,12 @@ The suites cover all seven categories:
 
 | Category | What it covers |
 |---|---|
-| Unit | Model-move validator (SAN, UCI, prose, illegal, empty), model player info, prompts, matchup/fallbacks summary, old-save decoding, SplitMix64, seed recording, personality table, chat gate, Perft (6 positions), FEN, SAN, castling, en passant, promotion, every draw rule, PGN, openings, win%/accuracy/classification, UCI parsing, battle plans, cast, coach facts, AI validator, clocks, recorder payloads, LAN codec, referee, consent form |
-| Security | Keychain naming, no key over http, no shipped keys, UCI/FEN/PGN injection and size limits, LAN frame limits, PSK per code, referee rejects out-of-turn, illegal and stale moves, site sign-in validation, Origin/CSRF, consent OFF never sends a name, a source scan for secrets and household names, bundled CAs, a cloud model side's key only in the https Authorization header and never in events, summaries or the feed, clipped reply excerpts |
+| Unit | Model-move validator (SAN, UCI, prose, illegal, empty), model player info, prompts, matchup/fallbacks summary, old-save decoding, save-format migration (format 1 → current), newer save formats refused, SplitMix64, seed recording, personality table, chat gate, Perft (6 positions), FEN, SAN, castling, en passant, promotion, every draw rule, PGN, openings, win%/accuracy/classification, UCI parsing, battle plans, cast, coach facts, AI validator, clocks, recorder payloads, LAN codec, referee, consent form |
+| Security | Keychain naming, no key over http, no shipped keys, UCI/FEN/PGN injection and size limits, LAN frame limits, PSK per code, referee rejects out-of-turn, illegal and stale moves, site sign-in validation, Origin/CSRF, consent OFF never sends a name, a source scan for secrets and household names, bundled CAs, oversized and foreign saves rejected before parsing, a cloud model side's key only in the https Authorization header and never in events, summaries or the feed, clipped reply excerpts |
 | Performance | Perft budget, move generation throughput, PGN round trip, coach facts per move, engine response, synth, scene sync, summary size, move validator on long rambling replies |
 | Retry | Backoff maths, outbox (transient kept, permanent dropped, order, persistence, cap), engine retry → fallback, illegal engine reply, AI retry and fallback, LAN reconnect giving up cleanly, model invalid-then-valid re-ask with the error, 3 invalid answers → engine fallback, backend down |
 | Integration | Real Stockfish (skipped if absent), TLS-PSK LAN on loopback incl. wrong code and reconnect, play history against a throwaway TLS Postgres 17 with NovaGames `play.sql` (RLS, no DELETE, idempotent writes), a model-vs-model session through the outbox to a sink and to Postgres (matchup, fallbacks, `model_reply` events, contiguous seq) |
-| Functional | Hot-seat and vs-Nova games to the end with history, takeback, draws, resignation, promotion, save/resume, PGN study mode, engine vs engine, AI narration with fallback, two-controller LAN games (only the host writes), Watch engine vs model with recorded replies, fallback counting, take over against a model |
+| Functional | Hot-seat and vs-Nova games to the end with history, takeback, draws, resignation, promotion, save/resume, an old save migrating and resuming, a newer or damaged save kept aside (byte for byte) with a notice, PGN study mode, engine vs engine, AI narration with fallback, two-controller LAN games (only the host writes), Watch engine vs model with recorded replies, fallback counting, take over against a model |
 | Frame / UI state | 32 piece nodes, node reuse, highlights, camera limits, battle start/skip-once/run-to-end under an offscreen renderer, non-blank offscreen frames, 2D/3D and flip state, Watch spectator state (model names, matchup, thinking line, pause) |
 
 ## Licences

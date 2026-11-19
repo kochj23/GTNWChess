@@ -338,4 +338,63 @@ final class FunctionalTests: XCTestCase {
         let ok = await waitUntil(10) { if case .listening(let p) = c.lan.status { return p != 0 } else { return false } }
         XCTAssertTrue(ok, "\(c.lan.status)")
     }
+
+    // MARK: - Save migration / set-aside
+
+    private func tempSave(_ text: String) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("save-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let u = dir.appendingPathComponent("current-game.json")
+        try Data(text.utf8).write(to: u)
+        return u
+    }
+
+    private func asideFiles(_ u: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: u.deletingLastPathComponent(), includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("current-game.unreadable-") && $0.pathExtension == "json" }
+    }
+
+    func testOldSaveMigratesAndResumes() throws {
+        let u = try tempSave(StoreAndRecorderUnitTests.v1Save)
+        let c = TestEnv.controller(persist: true)
+        XCTAssertTrue(c.resumeSaved(from: u))
+        XCTAssertEqual(c.game.sanMoves, ["e4", "e5"])
+        XCTAssertNil(c.saveNotice)
+        XCTAssertEqual(try asideFiles(u), [])
+    }
+
+    func testNewerSaveIsRefusedKeptAndReported() throws {
+        let text = StoreAndRecorderUnitTests.v1Save.replacingOccurrences(of: #""version":1"#, with: #""version":7,"writtenBy":"3.0""#)
+        let u = try tempSave(text)
+        let c = TestEnv.controller(persist: true)
+        XCTAssertFalse(c.resumeSaved(from: u))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: u.path), "moved out of the way of the next autosave")
+        let kept = try asideFiles(u)
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertEqual(try String(contentsOf: kept[0], encoding: .utf8), text, "kept byte for byte")
+        XCTAssertTrue(c.saveNotice?.contains("newer GTNW Chess (version 3.0") ?? false, c.saveNotice ?? "nil")
+        XCTAssertTrue(c.saveNotice?.contains(kept[0].lastPathComponent) ?? false)
+    }
+
+    func testCorruptSaveIsKeptAsideNotDeleted() throws {
+        let illegal = StoreAndRecorderUnitTests.v1Save.replacingOccurrences(of: "e7e5", with: "e7e2")
+        for (i, text) in [#"{"version":1,"mode":"#, "not json", illegal].enumerated() {
+            let u = try tempSave(text)
+            let c = TestEnv.controller(persist: true)
+            XCTAssertFalse(c.resumeSaved(from: u), "case \(i)")
+            let kept = try asideFiles(u)
+            XCTAssertEqual(kept.count, 1, "case \(i)")
+            XCTAssertEqual(try String(contentsOf: kept[0], encoding: .utf8), text, "case \(i)")
+            XCTAssertTrue(c.saveNotice?.contains("could not be read") ?? false, "case \(i)")
+        }
+    }
+
+    func testTwoSetAsidesInTheSameSecondBothSurvive() throws {
+        let u = try tempSave("garbage 1")
+        let now = Date()
+        XCTAssertThrowsError(try GameStore.load(from: u, now: now))
+        try Data("garbage 2".utf8).write(to: u)
+        XCTAssertThrowsError(try GameStore.load(from: u, now: now))
+        XCTAssertEqual(try asideFiles(u).count, 2)
+    }
 }

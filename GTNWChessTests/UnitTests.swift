@@ -311,6 +311,43 @@ final class CoachUnitTests: XCTestCase {
 }
 
 final class StoreAndRecorderUnitTests: XCTestCase {
+    /// A save as GTNW Chess 1.0/1.1 wrote it (format 1, no `writtenBy`).
+    static let v1Save = #"{"version":1,"mode":"hotseat","startFEN":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","#
+        + #""moves":["e2e4","e7e5"],"white":{"name":"A","kind":"human","local":true},"#
+        + #""black":{"name":"B","kind":"human","local":true},"you":"both","savedAt":700000000}"#
+
+    func testVersion1SaveMigratesToCurrent() throws {
+        let s = try GameStore.decode(Data(Self.v1Save.utf8))
+        XCTAssertEqual(s.version, SavedGame.currentVersion)
+        XCTAssertNil(s.writtenBy)
+        XCTAssertEqual(try s.restore().sanMoves, ["e4", "e5"])
+    }
+
+    func testEveryOlderSaveVersionHasAMigration() {
+        for v in 1..<SavedGame.currentVersion { XCTAssertNotNil(GameStore.migrations[v], "no migration from \(v)") }
+    }
+
+    func testNewerSaveVersionIsRefused() {
+        let newer = Self.v1Save.replacingOccurrences(of: #""version":1"#, with: #""version":99,"writtenBy":"9.0""#)
+        XCTAssertThrowsError(try GameStore.decode(Data(newer.utf8))) {
+            XCTAssertEqual($0 as? SaveLoadError, .newer(version: 99, writtenBy: "9.0"))
+        }
+    }
+
+    func testCurrentSaveRoundTripsAndRecordsWriter() throws {
+        let s = SavedGame(mode: .hotseat, startFEN: Position.startFEN, moves: ["d2d4"], white: .human("A", local: true, account: nil),
+                          black: .human("B", local: true, account: nil), level: nil, you: "both", clock: nil, recorder: nil, lan: nil,
+                          result: nil, savedAt: Date(timeIntervalSinceReferenceDate: 0), writtenBy: "1.2.0")
+        XCTAssertEqual(try GameStore.decode(JSONEncoder().encode(s)), s)
+    }
+
+    func testAsideNameKeepsOriginalAndDate() {
+        let u = URL(fileURLWithPath: "/x/current-game.json")
+        var c = DateComponents(); c.year = 2026; c.month = 11; c.day = 19; c.hour = 8; c.minute = 5; c.second = 9
+        let d = Calendar.current.date(from: c)!
+        XCTAssertEqual(GameStore.asideURL(for: u, now: d).lastPathComponent, "current-game.unreadable-20261119-080509.json")
+    }
+
     func testClockTickIncrementAndFlag() {
         var c = ChessClock(config: ClockConfig(initialSeconds: 1, incrementSeconds: 2))
         c.running = .white

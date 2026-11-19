@@ -62,6 +62,10 @@ struct ContentView: View {
         .alert("GTNW Chess", isPresented: Binding(get: { errorText != nil }, set: { if !$0 { errorText = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(errorText ?? "") }
+        .alert("Saved game not resumed", isPresented: Binding(get: { controller.saveNotice != nil },
+                                                               set: { if !$0 { controller.saveNotice = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(controller.saveNotice ?? "") }
         .onReceive(NotificationCenter.default.publisher(for: .gtnwCommand)) { n in handle(n.object as? String ?? "") }
         .onAppear { if AppLaunch.shouldOfferSignIn(controller) { sheet = .signIn } }
     }

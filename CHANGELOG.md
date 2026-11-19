@@ -4,6 +4,11 @@
 
 - **CI:** GitHub Actions builds and tests on `macos-15` for every push and pull request to `main`, with Stockfish
   from Homebrew so the engine integration tests run.
+- **Saves are migrated, never thrown away.** The save format is now 2 (adds `writtenBy`, the app version that wrote
+  it). Format 1 saves from 1.0 and 1.1 are migrated forward. A save from a newer build is refused, and a damaged save
+  is rejected; either way the file is moved aside to `current-game.unreadable-<date>.json` and an alert says where.
+  Before, any version mismatch was silently ignored and then overwritten by the next autosave. Note: 1.1.0 and
+  earlier cannot read format 2 and will still overwrite it.
 
 ## 1.1.0 (2026-11-12)
 
