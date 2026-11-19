@@ -56,6 +56,7 @@
 		F3E97CEFBFE0AE454A54F948 /* Types.swift in Sources */ = {isa = PBXBuildFile; fileRef = A930B2466459286517FF975A /* Types.swift */; };
 		F72901A1B0715DE775EE018D /* UCIEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B903E0BCD0F8F304C6156BE /* UCIEngine.swift */; };
 		FD8C272D6BA26041F94F4487 /* games-pg-ca.crt in Resources */ = {isa = PBXBuildFile; fileRef = 5A57238613B9246D2CC8F91C /* games-pg-ca.crt */; };
+		FE87ECDD2C94DD8B7109F35F /* KeyBindings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A10276AA7592573A126BF82 /* KeyBindings.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -100,6 +101,7 @@
 		76A9E0CEC06797DC5ACEE4AA /* FallbackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FallbackEngine.swift; sourceTree = "<group>"; };
 		78C2692131BB3A999823CA1C /* Position.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Position.swift; sourceTree = "<group>"; };
 		803A1C9507D0D6E96B0B0EF9 /* FunctionalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunctionalTests.swift; sourceTree = "<group>"; };
+		8A10276AA7592573A126BF82 /* KeyBindings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyBindings.swift; sourceTree = "<group>"; };
 		8A2A00642DB7E631B1801A17 /* IntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationTests.swift; sourceTree = "<group>"; };
 		8CB6535E113C9BCAE52C218D /* GTNWChess.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GTNWChess.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A752FF04E3C07CF442C3D39 /* PGWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PGWire.swift; sourceTree = "<group>"; };
@@ -256,6 +258,7 @@
 			children = (
 				518F27F9E7C5CB0DA7C1BB97 /* GameController.swift */,
 				4AB1D092A40544DE6922E940 /* GTNWChessApp.swift */,
+				8A10276AA7592573A126BF82 /* KeyBindings.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -462,6 +465,7 @@
 				B040CBC3561E6CF6A32DE9FB /* Game.swift in Sources */,
 				7E49E01924ECF7EA43377CFA /* GameController.swift in Sources */,
 				20072C7F3C53290134189DB0 /* GameStore.swift in Sources */,
+				FE87ECDD2C94DD8B7109F35F /* KeyBindings.swift in Sources */,
 				7959691FA199428968D7A6FD /* LANProtocol.swift in Sources */,
 				0C095B022D73202B878F1FA0 /* LANSession.swift in Sources */,
 				289A154401A61C15079D25EC /* Notation.swift in Sources */,

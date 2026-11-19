@@ -16,6 +16,9 @@
   default), and a DMG copied to both binaries folders. `--dry-run` does all of it in a temp folder and copies
   nothing. Releases leave out the Nova Games CA certificates, and a build without them no longer offers the Nova Games
   sign-in.
+- **Remappable keys (Settings › Keys)** for Hint, Undo Move, Flip Board, Toggle 2D / 3D, Reset Camera and Skip
+  Battle. They are stored in UserDefaults through the existing preference registration, and the defaults are the
+  1.1 keys. Duplicates and fixed menu shortcuts are refused, and Reset to Defaults restores the 1.1 keys.
 
 ## 1.1.0 (2026-11-12)
 

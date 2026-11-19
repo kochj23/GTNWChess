@@ -78,6 +78,15 @@ struct GTNWChessApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var controller: GameController
     @StateObject private var ai: NovaAI
+    // Remappable gameplay shortcuts (Settings › Keys); reading them here rebuilds the menus when one changes.
+    @AppStorage(GameKey.hint.prefKey) private var hintKey = GameKey.hint.defaultCombo.stored
+    @AppStorage(GameKey.undo.prefKey) private var undoKey = GameKey.undo.defaultCombo.stored
+    @AppStorage(GameKey.flip.prefKey) private var flipKey = GameKey.flip.defaultCombo.stored
+    @AppStorage(GameKey.toggle3D.prefKey) private var toggle3DKey = GameKey.toggle3D.defaultCombo.stored
+    @AppStorage(GameKey.resetCamera.prefKey) private var resetCameraKey = GameKey.resetCamera.defaultCombo.stored
+    @AppStorage(GameKey.skipBattle.prefKey) private var skipKey = GameKey.skipBattle.defaultCombo.stored
+
+    private func shortcut(_ k: GameKey, _ stored: String) -> KeyboardShortcut { (KeyCombo(stored) ?? k.defaultCombo).shortcut }
 
     init() {
         CLI.runIfRequested()
@@ -120,18 +129,18 @@ struct GTNWChessApp: App {
                 Button("Copy PGN") { post("copypgn") }
             }
             CommandGroup(replacing: .undoRedo) {
-                Button("Undo Move (Takeback)") { post("undo") }.keyboardShortcut("z")
+                Button("Undo Move (Takeback)") { post("undo") }.keyboardShortcut(shortcut(.undo, undoKey))
             }
             CommandGroup(after: .toolbar) {
-                Button("Flip Board") { post("flip") }.keyboardShortcut("f", modifiers: [.command, .option])
-                Button("Toggle 2D / 3D") { post("toggle3d") }.keyboardShortcut("d", modifiers: [.command, .option])
-                Button("Reset Camera") { post("resetcam") }.keyboardShortcut("0")
-                Button("Skip Battle") { post("skip") }.keyboardShortcut(.escape, modifiers: [])
+                Button("Flip Board") { post("flip") }.keyboardShortcut(shortcut(.flip, flipKey))
+                Button("Toggle 2D / 3D") { post("toggle3d") }.keyboardShortcut(shortcut(.toggle3D, toggle3DKey))
+                Button("Reset Camera") { post("resetcam") }.keyboardShortcut(shortcut(.resetCamera, resetCameraKey))
+                Button("Skip Battle") { post("skip") }.keyboardShortcut(shortcut(.skipBattle, skipKey))
                 Divider()
                 Button("Toggle Full Screen") { NSApp.keyWindow?.toggleFullScreen(nil) }.keyboardShortcut("f", modifiers: [.command, .control])
             }
             CommandMenu("Game") {
-                Button("Hint") { post("hint") }.keyboardShortcut("h")
+                Button("Hint") { post("hint") }.keyboardShortcut(shortcut(.hint, hintKey))
                 Button("Offer Draw") { post("draw") }
                 Button("Resign…") { post("resign") }
                 Divider()

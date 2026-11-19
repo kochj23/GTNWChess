@@ -60,7 +60,8 @@ enum Prefs {
 
     static func register() {
         UserDefaults.standard.register(defaults: [battles: true, speed: 1.0, camera: true, carnage: 2, sound: true, volume: 0.8,
-                                                  coachAuto: true, showThreats: true, legalHints: true, antialias: true, shadows: true, watchDelay: 1.2])
+                                                  coachAuto: true, showThreats: true, legalHints: true, antialias: true, shadows: true, watchDelay: 1.2]
+                                        .merging(KeyBindings.registrationDefaults) { a, _ in a })
     }
 
     static var animation: AnimationPrefs {

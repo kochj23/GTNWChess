@@ -49,7 +49,7 @@ final class ChessSCNView: SCNView {
     override func magnify(with event: NSEvent) { board?.zoom(event.magnification * 60) }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 || event.charactersIgnoringModifiers == " " { onSkip(); return }
+        if event.charactersIgnoringModifiers == " " || KeyCombo(event: event) == KeyBindings.combo(.skipBattle) { onSkip(); return }
         super.keyDown(with: event)
     }
 }

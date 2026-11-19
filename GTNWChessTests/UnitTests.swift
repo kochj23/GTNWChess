@@ -597,3 +597,69 @@ final class IdAdoptionUnitTests: XCTestCase {
         XCTAssertFalse(g.allow("battle", ply: 30, personality: p, notable: false), "probability")
     }
 }
+
+/// Settings › Keys: remappable gameplay shortcuts.
+final class KeyBindingUnitTests: XCTestCase {
+    private var d: UserDefaults!
+    private let suite = "GTNWChessTests.keys.\(UUID().uuidString)"
+
+    override func setUp() {
+        d = UserDefaults(suiteName: suite)
+        d.register(defaults: KeyBindings.registrationDefaults)
+    }
+
+    override func tearDown() { d.removePersistentDomain(forName: suite) }
+
+    func testDefaultsAreTheShortcutsFrom1_1() {
+        let expected: [GameKey: String] = [.hint: "cmd+h", .undo: "cmd+z", .flip: "cmd+opt+f", .toggle3D: "cmd+opt+d",
+                                           .resetCamera: "cmd+0", .skipBattle: "esc"]
+        for k in GameKey.allCases { XCTAssertEqual(KeyBindings.combo(k, in: d).stored, expected[k], k.rawValue) }
+        XCTAssertEqual(KeyBindings.combo(.skipBattle, in: d).shortcut.key, .escape)
+        XCTAssertEqual(KeyBindings.combo(.flip, in: d).shortcut.modifiers, [.command, .option])
+    }
+
+    func testRemapRoundTripsThroughUserDefaults() throws {
+        let c = KeyCombo(key: "J", command: true, shift: true, control: true)
+        try KeyBindings.set(c, for: .hint, in: d)
+        XCTAssertEqual(d.string(forKey: GameKey.hint.prefKey), "cmd+shift+ctrl+j")
+        XCTAssertEqual(KeyBindings.combo(.hint, in: d), c)
+        XCTAssertEqual(KeyCombo(c.stored), c)
+        XCTAssertEqual(KeyCombo("cmd++")?.key, "+")
+        XCTAssertEqual(c.label, "⌃⇧⌘J")
+        let fresh = UserDefaults(suiteName: suite)!
+        XCTAssertEqual(KeyBindings.combo(.hint, in: fresh), c, "persists for the next launch")
+    }
+
+    func testDuplicatesAndReservedShortcutsAreRejected() throws {
+        XCTAssertThrowsError(try KeyBindings.set(KeyCombo(key: "z", command: true), for: .hint, in: d)) {
+            XCTAssertEqual($0 as? KeyBindings.BindError, .taken("Undo Move (Takeback)"))
+        }
+        XCTAssertThrowsError(try KeyBindings.set(KeyCombo(key: "s", command: true), for: .flip, in: d)) {
+            XCTAssertEqual($0 as? KeyBindings.BindError, .taken("Save PGN"))
+        }
+        XCTAssertEqual(KeyBindings.combo(.hint, in: d).stored, "cmd+h", "a refused change leaves the old key")
+        XCTAssertNoThrow(try KeyBindings.set(KeyCombo(key: "h", command: true), for: .hint, in: d), "rebinding to itself is fine")
+        let all = GameKey.allCases.map { KeyBindings.combo($0, in: d) }
+        XCTAssertEqual(Set(all).count, all.count, "no two gameplay keys share a shortcut")
+        XCTAssertTrue(Set(all.map(\.stored)).isDisjoint(with: KeyBindings.reserved.keys))
+    }
+
+    func testInvalidShortcutsAreRejected() {
+        for bad in [KeyCombo(key: "h"), KeyCombo(key: " ", command: true), KeyCombo(key: "ab", command: true), KeyCombo(key: "")] {
+            XCTAssertThrowsError(try KeyBindings.set(bad, for: .hint, in: d), bad.stored) {
+                XCTAssertEqual($0 as? KeyBindings.BindError, .invalid)
+            }
+        }
+        XCTAssertNil(KeyCombo("hyper+h"))
+        XCTAssertNil(KeyCombo("h"))
+        d.set("garbage+", forKey: GameKey.hint.prefKey)
+        XCTAssertEqual(KeyBindings.combo(.hint, in: d), GameKey.hint.defaultCombo, "a damaged value falls back to the default")
+    }
+
+    func testResetRestoresDefaults() throws {
+        try KeyBindings.set(KeyCombo(key: "k", command: true), for: .hint, in: d)
+        try KeyBindings.set(KeyCombo(key: "b", control: true), for: .skipBattle, in: d)
+        KeyBindings.resetToDefaults(in: d)
+        for k in GameKey.allCases { XCTAssertEqual(KeyBindings.combo(k, in: d), k.defaultCombo) }
+    }
+}

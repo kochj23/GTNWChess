@@ -2,10 +2,11 @@
 //  SettingsView.swift
 //  GTNW Chess
 //
-//  Settings window: Graphics, Animation, Sound, Coach, Nova Games (play history, sign-in, review consent) and AI
+//  Settings window: Graphics, Animation, Sound, Coach, Keys (remappable gameplay shortcuts), Nova Games (play history, sign-in, review consent) and AI
 //  (NovaAISettingsView), plus Acknowledgements (Stockfish GPLv3 notice and source offer).
 //
 
+import AppKit
 import NovaAIKit
 import SwiftUI
 
@@ -19,6 +20,7 @@ struct SettingsView: View {
             AnimationSettings().tabItem { Label("Animation", systemImage: "bolt") }
             SoundSettings().tabItem { Label("Sound", systemImage: "speaker.wave.2") }
             CoachSettings().tabItem { Label("Coach", systemImage: "graduationcap") }
+            KeysSettings().tabItem { Label("Keys", systemImage: "keyboard") }
             GamesDBSettings(controller: controller, outbox: controller.outbox).tabItem { Label("Nova Games", systemImage: "trophy") }
             NovaAISettingsView(ai: ai, footer: "When AI is off or no backend answers, Nova's coach, battle banter and recaps use GTNW Chess's built-in script. AI only explains and narrates: Stockfish decides every move, and any move or square the AI mentions is checked against the real position. Keys stay in the Keychain (com.jkoch.gtnwchess.*) and only go over https. Turn off Allow Nova to run with no Nova dependency at all; Watch's language-model sides then use the other backends (local Ollama/MLX first, cloud only with your key).")
                 .tabItem { Label("AI", systemImage: "sparkles") }
@@ -58,8 +60,64 @@ struct AnimationSettings: View {
                 ForEach(AnimationPrefs.carnageLevels.indices, id: \.self) { i in Text(AnimationPrefs.carnageLevels[i]).tag(i) }
             }.accessibilityIdentifier("carnagePicker")
             Text("Brutal and Maximum add screen shake, hydraulic-fluid spray, torn-off parts and scorch marks that stay on the board.").font(.caption).foregroundStyle(.secondary)
-            Text("Click the board, press Space or Esc, or use the banner's Skip to end a battle early.").font(.caption).foregroundStyle(.secondary)
+            Text("Click the board, press Space or the Skip Battle key (Esc unless changed in Keys), or use the banner's Skip to end a battle early.").font(.caption).foregroundStyle(.secondary)
         }.formStyle(.grouped)
+    }
+}
+
+/// Settings › Keys: click a shortcut, press the new keys. Duplicates and fixed menu shortcuts are refused.
+struct KeysSettings: View {
+    @State private var recording: GameKey?
+    @State private var monitor: Any?
+    @State private var message: String?
+    @State private var revision = 0
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(GameKey.allCases) { k in
+                    let label = KeyBindings.combo(k).label
+                    LabeledContent(k.title) {
+                        Button(recording == k ? "Press keys…" : label) { recording == k ? stop() : record(k) }
+                            .monospaced()
+                            .accessibilityLabel("\(k.title) shortcut")
+                            .accessibilityValue(recording == k ? "Waiting for keys" : label)
+                            .accessibilityHint("Activate, then press the new shortcut")
+                    }
+                }
+            } footer: {
+                Text(message ?? "Use Esc, or a key with ⌘ or ⌃. New, Open, Save, LAN, Copy FEN and Full Screen stay fixed.")
+                    .font(.caption).foregroundStyle(message == nil ? Color.secondary : Theme.accent)
+            }
+            Button("Reset to Defaults") { stop(); KeyBindings.resetToDefaults(); message = nil; revision += 1 }
+                .accessibilityIdentifier("resetKeys")
+        }
+        .formStyle(.grouped)
+        .id(revision)
+        .onDisappear { stop() }
+    }
+
+    private func record(_ k: GameKey) {
+        stop()
+        recording = k
+        message = nil
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            guard let k = recording else { return e }
+            if let c = KeyCombo(event: e) {
+                do { try KeyBindings.set(c, for: k) } catch { message = error.localizedDescription }
+            } else {
+                message = KeyBindings.BindError.invalid.errorDescription
+            }
+            stop()
+            revision += 1
+            return nil
+        }
+    }
+
+    private func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        recording = nil
     }
 }
 
