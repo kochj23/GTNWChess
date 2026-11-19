@@ -121,17 +121,21 @@ struct ContentView: View {
 struct BattleBanner: View {
     var title: String
     var skip: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "bolt.fill").foregroundStyle(Theme.accent)
+            Image(systemName: "bolt.fill").foregroundStyle(Theme.accent).accessibilityHidden(true)
             Text(title).font(.system(.headline, design: .rounded)).foregroundStyle(.white)
+                .accessibilityLabel("Battle: \(title)")
             Button("Skip ⎋", action: skip).buttonStyle(.borderless).foregroundStyle(Theme.voidGlow)
+                .accessibilityLabel("Skip battle")
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().stroke(Theme.rim.opacity(0.7)))
         .padding(.top, 14)
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("battleBanner")
     }
 }
@@ -185,9 +189,12 @@ struct SidePanel: View {
             HStack {
                 Button { controller.requestHint() } label: { Label("Hint", systemImage: "lightbulb") }
                     .disabled(!controller.canInteract)
+                    .accessibilityHint("Highlights a suggested move")
                 Button { controller.refreshCoach() } label: { Label("Explain", systemImage: "text.bubble") }
+                    .accessibilityHint("Nova explains the position")
                 Button { controller.undo() } label: { Label("Takeback", systemImage: "arrow.uturn.backward") }
                     .disabled(!controller.canUndo)
+                    .accessibilityHint("Takes back the last move")
             }
             .controlSize(.small)
             MoveList(game: controller.game)
@@ -202,7 +209,9 @@ struct SidePanel: View {
                 Button("New Game…") { sheet = .newGame }.keyboardShortcut("n", modifiers: .command)
                 Spacer()
                 Button("Draw") { controller.offerDraw() }.disabled(controller.game.isOver || controller.drawOfferFrom != nil)
+                    .accessibilityLabel("Offer draw")
                 Button("Resign") { confirmResign = true }.disabled(controller.game.isOver || controller.resigningSide == nil)
+                    .accessibilityHint("Asks for confirmation")
             }
             .controlSize(.small)
         }
@@ -235,6 +244,17 @@ struct PlayerRow: View {
         }
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 8).fill(toMove ? Theme.rim.opacity(0.25) : Color.white.opacity(0.04)))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Self.accessibilityText(controller, side))
+    }
+
+    /// One VoiceOver sentence per player: "Solar, Ann, to move, captures ♟×2, 4:59 left".
+    static func accessibilityText(_ c: GameController, _ side: Side) -> String {
+        let toMove = c.game.sideToMove == side && !c.game.isOver
+        let r = PlayerRow(controller: c, side: side)
+        return [side.faction, c.displayName(side), c.player(side).kind == "model" ? "language model" : nil, toMove ? "to move" : nil,
+                r.captured, c.clock.map { "\(ChessClock.format($0.remaining[side.rawValue])) left" }]
+            .compactMap { $0 }.joined(separator: ", ")
     }
 
     private var captured: String {
@@ -251,9 +271,9 @@ struct MoveList: View {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.fixed(30)), GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 2) {
                     ForEach(rows, id: \.0) { row in
-                        Text("\(row.0).").foregroundStyle(.secondary)
-                        Text(row.1).id("w\(row.0)")
-                        Text(row.2).id("b\(row.0)")
+                        Text("\(row.0).").foregroundStyle(.secondary).accessibilityLabel("Move \(row.0)")
+                        Text(row.1).id("w\(row.0)").accessibilityLabel("Solar \(row.1)")
+                        Text(row.2).id("b\(row.0)").accessibilityLabel(row.2.isEmpty ? "" : "Void \(row.2)")
                     }
                 }
                 .font(.system(.callout, design: .monospaced))
@@ -328,6 +348,7 @@ struct PromotionPicker: View {
                         }.frame(width: 76, height: 86)
                     }
                     .accessibilityIdentifier("promote-\(k.name)")
+                    .accessibilityLabel("Promote to \(k.name), \(Cast.name(k, side))")
                 }
             }
             Button("Cancel", role: .cancel) { choose(nil) }
@@ -355,6 +376,7 @@ struct WatchControls: View {
                 }.accessibilityIdentifier("watchPause")
                 Button { controller.takeOver() } label: { Label("Take over", systemImage: "hand.raised.fill") }
                     .disabled(controller.game.isOver || controller.animating)
+                    .accessibilityHint("Play the side to move from here")
                     .help("Play the side to move from here; the other side keeps its engine or model.")
             }
             Picker("Pace", selection: $delay) {

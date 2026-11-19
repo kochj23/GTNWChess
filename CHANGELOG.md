@@ -19,6 +19,9 @@
 - **Remappable keys (Settings › Keys)** for Hint, Undo Move, Flip Board, Toggle 2D / 3D, Reset Camera and Skip
   Battle. They are stored in UserDefaults through the existing preference registration, and the defaults are the
   1.1 keys. Duplicates and fixed menu shortcuts are refused, and Reset to Defaults restores the 1.1 keys.
+- **Accessibility:** VoiceOver labels, values and hints for the 2D squares (selected, legal move, in check), player
+  rows, the move list, the battle banner, promotion and the side-panel buttons. **Reduce motion** skips capture
+  battles and the cinematic camera, and stops the board flip and banner slide from animating.
 
 ## 1.1.0 (2026-11-12)
 

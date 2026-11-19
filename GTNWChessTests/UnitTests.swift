@@ -251,6 +251,17 @@ final class CastAndBattleUnitTests: XCTestCase {
         XCTAssertEqual(Set(PieceKind.allCases.map { Cast.name($0, .white) }).count, 6)
     }
 
+    func testReduceMotionTurnsOffBattlesAndCinematicCamera() {
+        UserDefaults.standard.removeObject(forKey: Prefs.battles)
+        UserDefaults.standard.removeObject(forKey: Prefs.camera)
+        Prefs.register()
+        let normal = Prefs.animation(reduceMotion: false), reduced = Prefs.animation(reduceMotion: true)
+        XCTAssertTrue(normal.battlesEnabled && normal.cinematicCamera)
+        XCTAssertFalse(reduced.battlesEnabled)
+        XCTAssertFalse(reduced.cinematicCamera)
+        XCTAssertEqual(reduced.speed, normal.speed)
+    }
+
     func testAnimationSpeedsAreOrdered() {
         XCTAssertEqual(AnimationPrefs.speeds, AnimationPrefs.speeds.sorted())
         XCTAssertTrue(AnimationPrefs.speeds.contains(1))

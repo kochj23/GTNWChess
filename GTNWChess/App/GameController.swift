@@ -64,10 +64,16 @@ enum Prefs {
                                         .merging(KeyBindings.registrationDefaults) { a, _ in a })
     }
 
-    static var animation: AnimationPrefs {
+    /// System Settings › Accessibility › Display › Reduce motion. Replaceable in tests.
+    nonisolated(unsafe) static var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    static var animation: AnimationPrefs { animation(reduceMotion: reduceMotion()) }
+
+    /// Reduce Motion skips capture battles (the captured piece just fades) and the cinematic camera.
+    static func animation(reduceMotion: Bool) -> AnimationPrefs {
         let d = UserDefaults.standard
-        return AnimationPrefs(battlesEnabled: d.bool(forKey: battles), speed: min(3, max(0.5, d.double(forKey: speed))),
-                              cinematicCamera: d.bool(forKey: camera), carnage: min(2, max(0, d.integer(forKey: carnage))))
+        return AnimationPrefs(battlesEnabled: d.bool(forKey: battles) && !reduceMotion, speed: min(3, max(0.5, d.double(forKey: speed))),
+                              cinematicCamera: d.bool(forKey: camera) && !reduceMotion, carnage: min(2, max(0, d.integer(forKey: carnage))))
     }
 
     static var playerDisplayName: String {
@@ -103,7 +109,7 @@ final class GameController: ObservableObject {
     @Published private(set) var analyzing = false
     @Published private(set) var recap: String?
     @Published var is3D = true { didSet { if !is3D { scene.skipBattle() } } }
-    @Published var flipped = false { didSet { scene.setFlipped(flipped, animated: true) } }
+    @Published var flipped = false { didSet { scene.setFlipped(flipped, animated: !Prefs.reduceMotion()) } }
     @Published private(set) var lanInfo: SavedGame.LANInfo?
     @Published private(set) var waitingForGuest = false
     @Published private(set) var lanNote: String?

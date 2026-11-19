@@ -72,6 +72,7 @@ struct Board3DView: NSViewRepresentable {
         v.onSkip = { [weak controller] in controller?.skipAnimation() }
         v.isBattling = { [weak controller] in controller?.scene.battleActive ?? false }
         v.setAccessibilityLabel("3D chess board")
+        v.setAccessibilityHelp("Click a piece, then a square. For square-by-square play with VoiceOver, switch to the 2D board.")
         apply(v)
         return v
     }
@@ -111,6 +112,7 @@ struct Board2DView: View {
             .frame(width: size, height: size)
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.rim, lineWidth: 2))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel("2D chess board")
         }
         .background(Theme.space)
@@ -147,7 +149,11 @@ struct Board2DView: View {
         }
         .frame(width: size, height: size)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(Sq.name(s)) \(game.position.piece(at: s).map { "\($0.side.faction) \($0.kind.name)" } ?? "empty")")
+        .accessibilityValue([controller.selected == s ? "selected" : nil, targets.contains(s) ? "legal move" : nil,
+                             check == s ? "in check" : nil].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityAddTraits(controller.selected == s ? [.isButton, .isSelected] : .isButton)
     }
 
     static func glyph(_ p: Piece) -> String {

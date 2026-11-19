@@ -397,4 +397,37 @@ final class FunctionalTests: XCTestCase {
         XCTAssertThrowsError(try GameStore.load(from: u, now: now))
         XCTAssertEqual(try asideFiles(u).count, 2)
     }
+
+    // MARK: - Reduce Motion
+
+    func testReduceMotionSkipsTheBattleButStillPlaysTheCapture() throws {
+        let saved = Prefs.reduceMotion
+        defer { Prefs.reduceMotion = saved }
+        UserDefaults.standard.removeObject(forKey: Prefs.battles)
+        for reduce in [false, true] {
+            Prefs.reduceMotion = { reduce }
+            let c = TestEnv.controller()
+            var cfg = NewGameConfig(); cfg.mode = .hotseat; c.newGame(cfg)
+            c.is3D = true
+            XCTAssertTrue(TestEnv.play(c, ["e4", "d5", "exd5"]))
+            XCTAssertEqual(c.game.lastMove?.san, "exd5")
+            XCTAssertEqual(c.battleBanner != nil, !reduce, "battle banner with reduce motion \(reduce)")
+            XCTAssertEqual(c.scene.battleActive, !reduce, "battle with reduce motion \(reduce)")
+            c.skipAnimation()
+        }
+    }
+
+    func testPlayerRowSpeaksOneSentence() {
+        let c = TestEnv.controller()
+        var cfg = NewGameConfig(); cfg.mode = .hotseat; cfg.playerName = "Ann"; cfg.opponentName = "Bo"
+        cfg.clock = ClockConfig(initialSeconds: 300, incrementSeconds: 0)
+        c.newGame(cfg)
+        XCTAssertTrue(TestEnv.play(c, ["e4", "d5", "exd5"]))
+        let w = PlayerRow.accessibilityText(c, .white), b = PlayerRow.accessibilityText(c, .black)
+        XCTAssertTrue(w.hasPrefix("\(Side.white.faction), Ann"), w)
+        XCTAssertTrue(w.contains("×1"), w)
+        XCTAssertTrue(w.contains("left"), w)
+        XCTAssertTrue(b.contains("to move"), b)
+        XCTAssertFalse(w.contains("to move"), w)
+    }
 }

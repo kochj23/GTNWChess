@@ -149,6 +149,30 @@ final class FrameTests: XCTestCase {
         XCTAssertFalse(s.battleActive)
     }
 
+    func testReduceMotionCaptureResolvesWithoutABattle() async throws {
+        let s = BoardScene()
+        s.playSound = { _ in }
+        let r = try renderer(s)
+        let g0 = try Fixtures.game(["e4", "d5"])
+        var g = g0
+        s.sync(g.position)
+        let pm = try g.play(san: "exd5")
+        let prefs = Prefs.animation(reduceMotion: true)
+        XCTAssertFalse(prefs.battlesEnabled)
+        XCTAssertFalse(prefs.cinematicCamera)
+        var done = 0
+        let start = CACurrentMediaTime()
+        s.animate(pm, before: g0.position, after: g.position, prefs: prefs) { done += 1 }
+        XCTAssertFalse(s.battleActive, "no battle under Reduce Motion")
+        let ok = await waitUntil(5) {
+            r.render(atTime: CACurrentMediaTime() - start + 0.001)
+            return done == 1
+        }
+        XCTAssertTrue(ok)
+        XCTAssertLessThan(CACurrentMediaTime() - start, 3, "a plain move, not a battle")
+        XCTAssertEqual(s.scarsNode.childNodes.count, 0, "no carnage marks")
+    }
+
     func testBattleRunsToCompletionUnderRenderer() async throws {
         let s = BoardScene()
         s.playSound = { _ in }
