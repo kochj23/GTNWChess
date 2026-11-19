@@ -1,0 +1,55 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+
+    env:
+      PROJECT: GTNWChess.xcodeproj
+      SCHEME: GTNWChess
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Show Xcode version
+      run: xcodebuild -version
+
+    # scripts/bundle-stockfish.sh copies Homebrew's /opt/homebrew/opt/stockfish/bin/stockfish into the app, so the
+    # Stockfish integration tests run instead of skipping. Postgres and Metal tests still XCTSkip when absent.
+    - name: Install Stockfish
+      run: |
+        brew install stockfish
+        lipo -archs /opt/homebrew/opt/stockfish/bin/stockfish
+
+    - name: Build
+      run: |
+        set -o pipefail
+        xcodebuild build \
+          -project "$PROJECT" \
+          -scheme "$SCHEME" \
+          -destination 'platform=macOS' \
+          -derivedDataPath build/dd \
+          SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
+          | tail -40
+
+    - name: Stockfish bundled
+      run: test -x "build/dd/Build/Products/Debug/GTNW Chess.app/Contents/MacOS/stockfish"
+
+    - name: Test (GTNWChessTests)
+      run: |
+        set -o pipefail
+        xcodebuild test \
+          -project "$PROJECT" \
+          -scheme "$SCHEME" \
+          -destination 'platform=macOS' \
+          -derivedDataPath build/dd \
+          -only-testing:GTNWChessTests \
+          SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
+          2>&1 | tee build/test.log | tail -60
+        grep -E "Executed [0-9]+ tests" build/test.log | tail -1

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **CI:** GitHub Actions builds and tests on `macos-15` for every push and pull request to `main`, with Stockfish
+  from Homebrew so the engine integration tests run.
+
 ## 1.1.0 (2026-11-12)
 
 - **Watch: AI vs AI.** Each side is Nova's engine (8 levels) or a language model (backend + model from NovaAIKit's

@@ -1,5 +1,6 @@
 # GTNW Chess
 
+[![Build & Test](https://github.com/kochj23/GTNWChess/actions/workflows/build.yml/badge.svg)](https://github.com/kochj23/GTNWChess/actions/workflows/build.yml)
 ![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![Platform](https://img.shields.io/badge/macOS-14%2B-lightgrey)
 ![Arch](https://img.shields.io/badge/arch-arm64-lightgrey)
@@ -409,6 +410,11 @@ authors list and the source offer go to `Contents/Resources/Stockfish/`. Release
 ```sh
 xcodebuild -project GTNWChess.xcodeproj -scheme GTNWChess -derivedDataPath ./dd test
 ```
+
+GitHub Actions (`.github/workflows/build.yml`) builds and runs the whole suite on every push and pull request to
+`main`, on a GitHub-hosted `macos-15` runner. It installs Stockfish with Homebrew, so the bundle step copies it in and
+the Stockfish integration tests run. Tests that need Postgres 17 or a Metal device skip themselves when those are
+missing.
 
 The suites cover all seven categories:
 
