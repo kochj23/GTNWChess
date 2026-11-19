@@ -1,7 +1,7 @@
 # GTNW Chess
 
 [![Build & Test](https://github.com/kochj23/GTNWChess/actions/workflows/build.yml/badge.svg)](https://github.com/kochj23/GTNWChess/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![Platform](https://img.shields.io/badge/macOS-14%2B-lightgrey)
 ![Arch](https://img.shields.io/badge/arch-arm64-lightgrey)
 ![Swift](https://img.shields.io/badge/Swift-5.9%20mode-orange)

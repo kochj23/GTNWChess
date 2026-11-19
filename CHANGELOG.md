@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 (2026-11-19)
 
 - **CI:** GitHub Actions builds and tests on `macos-15` for every push and pull request to `main`, with Stockfish
   from Homebrew so the engine integration tests run.
