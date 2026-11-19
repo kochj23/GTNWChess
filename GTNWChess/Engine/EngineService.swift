@@ -40,11 +40,13 @@ final class EngineService: @unchecked Sendable {
                     return v
                 } catch {
                     if case EngineError.badInput = error { throw error }
+                    Log.engine.notice("Stockfish attempt \(attempt + 1) failed: \(String(describing: error), privacy: .public)")
                     await primary.shutdown()   // next attempt starts a fresh process
                     if attempt == 1 { break }
                 }
             }
         }
+        if primary != nil { Log.engine.error("Stockfish failed twice; using the built-in engine for this request") }
         let v = try await body(fallback)
         setSource(await fallback.name)
         return v

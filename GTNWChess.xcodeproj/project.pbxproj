@@ -42,6 +42,7 @@
 		B40F30451E226944E629322A /* PlayOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74ECA29BDD8131085139255E /* PlayOutbox.swift */; };
 		B67FD6C1F0EFB13404CF796E /* TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CD0CE6A573EAF53B51FBBFF /* TestSupport.swift */; };
 		BE2555BFA4AC7FCBBAE615BB /* SoundFX.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F2A2CA28513F2D7338BCDAC /* SoundFX.swift */; };
+		BE9263F5D52A7AB6FA5CE401 /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96EA7FE9A3D077EC19AF11AA /* Log.swift */; };
 		C040849700B5305493124608 /* PGN.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF6B870CAF10F9AB8CC1F10 /* PGN.swift */; };
 		C0C410CBA281232A9ED15684 /* Position.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78C2692131BB3A999823CA1C /* Position.swift */; };
 		C2A8C4FCE40992C8F75125BF /* BattlePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B879030DA9A7B5833880CCDD /* BattlePlan.swift */; };
@@ -104,6 +105,7 @@
 		8A10276AA7592573A126BF82 /* KeyBindings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyBindings.swift; sourceTree = "<group>"; };
 		8A2A00642DB7E631B1801A17 /* IntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationTests.swift; sourceTree = "<group>"; };
 		8CB6535E113C9BCAE52C218D /* GTNWChess.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GTNWChess.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		96EA7FE9A3D077EC19AF11AA /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
 		9A752FF04E3C07CF442C3D39 /* PGWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PGWire.swift; sourceTree = "<group>"; };
 		A8E02BCF3CC90F7832291816 /* play.sql */ = {isa = PBXFileReference; path = play.sql; sourceTree = "<group>"; };
 		A930B2466459286517FF975A /* Types.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Types.swift; sourceTree = "<group>"; };
@@ -259,6 +261,7 @@
 				518F27F9E7C5CB0DA7C1BB97 /* GameController.swift */,
 				4AB1D092A40544DE6922E940 /* GTNWChessApp.swift */,
 				8A10276AA7592573A126BF82 /* KeyBindings.swift */,
+				96EA7FE9A3D077EC19AF11AA /* Log.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -468,6 +471,7 @@
 				FE87ECDD2C94DD8B7109F35F /* KeyBindings.swift in Sources */,
 				7959691FA199428968D7A6FD /* LANProtocol.swift in Sources */,
 				0C095B022D73202B878F1FA0 /* LANSession.swift in Sources */,
+				BE9263F5D52A7AB6FA5CE401 /* Log.swift in Sources */,
 				289A154401A61C15079D25EC /* Notation.swift in Sources */,
 				0D8A8E598F052FA61DD40B3B /* Openings.swift in Sources */,
 				C040849700B5305493124608 /* PGN.swift in Sources */,

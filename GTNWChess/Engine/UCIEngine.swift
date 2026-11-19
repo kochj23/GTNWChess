@@ -151,7 +151,10 @@ actor UCIEngine: ChessEngine {
             for line in buffer.append(d) { queue.push(line) }
         }
         p.terminationHandler = { _ in queue.finish() }
-        do { try p.run() } catch { throw EngineError.launchFailed(error.localizedDescription) }
+        do { try p.run() } catch {
+            Log.engine.error("cannot launch \(self.url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            throw EngineError.launchFailed(error.localizedDescription)
+        }
         process = p
         stdin = inPipe.fileHandleForWriting
         lines = queue

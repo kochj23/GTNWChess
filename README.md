@@ -426,6 +426,19 @@ checks the rules engine and asks the bundled Stockfish for a move. It exits 0 wh
 hardened runtime off for the Debug test host, so an integration test re-signs a copy of the app with it and runs
 `--selftest`.
 
+### Logs
+
+Diagnostics go to the unified log, with one `Logger` per area (`app`, `engine`, `store`, `lan`, `play`, `ai`,
+`audio`) under the subsystem `com.jkoch.gtnwchess`:
+
+```sh
+log stream --predicate 'subsystem == "com.jkoch.gtnwchess"' --level info
+```
+
+They cover Stockfish retries and fallback, saves that are set aside, autosave failures, LAN and play-history
+problems, and model moves that are rejected. Model reply text is never logged in readable form. `print` is used
+only for the CLI's own output (`--selftest`, `--setup-credentials`).
+
 ### Release
 
 ```sh
@@ -458,7 +471,7 @@ The suites cover all seven categories:
 
 | Category | What it covers |
 |---|---|
-| Unit | Reduce Motion turns off battles and the cinematic camera, remappable keys (defaults equal the 1.1 keys, round trip through UserDefaults, duplicates and fixed shortcuts rejected, invalid keys rejected, reset), model-move validator (SAN, UCI, prose, illegal, empty), model player info, prompts, matchup/fallbacks summary, old-save decoding, save-format migration (format 1 → current), newer save formats refused, SplitMix64, seed recording, personality table, chat gate, Perft (6 positions), FEN, SAN, castling, en passant, promotion, every draw rule, PGN, openings, win%/accuracy/classification, UCI parsing, battle plans, cast, coach facts, AI validator, clocks, recorder payloads, LAN codec, referee, consent form |
+| Unit | One logger per area and `print` only in the CLI (source scan), Reduce Motion turns off battles and the cinematic camera, remappable keys (defaults equal the 1.1 keys, round trip through UserDefaults, duplicates and fixed shortcuts rejected, invalid keys rejected, reset), model-move validator (SAN, UCI, prose, illegal, empty), model player info, prompts, matchup/fallbacks summary, old-save decoding, save-format migration (format 1 → current), newer save formats refused, SplitMix64, seed recording, personality table, chat gate, Perft (6 positions), FEN, SAN, castling, en passant, promotion, every draw rule, PGN, openings, win%/accuracy/classification, UCI parsing, battle plans, cast, coach facts, AI validator, clocks, recorder payloads, LAN codec, referee, consent form |
 | Security | Keychain naming, no key over http, no shipped keys, UCI/FEN/PGN injection and size limits, LAN frame limits, PSK per code, referee rejects out-of-turn, illegal and stale moves, site sign-in validation, Origin/CSRF, consent OFF never sends a name, a source scan for secrets and household names, bundled CAs, a build without the CAs offers no play history, oversized and foreign saves rejected before parsing, a cloud model side's key only in the https Authorization header and never in events, summaries or the feed, clipped reply excerpts |
 | Performance | Perft budget, move generation throughput, PGN round trip, coach facts per move, engine response, synth, scene sync, summary size, move validator on long rambling replies |
 | Retry | Backoff maths, outbox (transient kept, permanent dropped, order, persistence, cap), engine retry → fallback, illegal engine reply, AI retry and fallback, LAN reconnect giving up cleanly, model invalid-then-valid re-ask with the error, 3 invalid answers → engine fallback, backend down |

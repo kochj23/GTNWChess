@@ -117,8 +117,9 @@ enum GameStore {
     ]
 
     static func save(_ s: SavedGame, to url: URL = GameStore.url) {
-        guard let d = try? JSONEncoder().encode(s) else { return }
-        try? d.write(to: url, options: [.atomic])
+        do { try JSONEncoder().encode(s).write(to: url, options: [.atomic]) } catch {
+            Log.store.error("autosave failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Size cap → version (refuse newer, migrate older) → JSON → the moves replay legally.
@@ -147,7 +148,9 @@ enum GameStore {
     static func load(from url: URL = GameStore.url, now: Date = Date()) throws -> SavedGame? {
         guard let d = try? Data(contentsOf: url) else { return nil }
         do { return try decode(d) } catch let reason as SaveLoadError {
-            throw SaveSetAside(reason: reason, keptAt: moveAside(url, now: now))
+            let kept = moveAside(url, now: now)
+            Log.store.error("save not resumed (\(String(describing: reason), privacy: .public)); kept at \(kept?.path ?? "original path", privacy: .public)")
+            throw SaveSetAside(reason: reason, keptAt: kept)
         }
     }
 

@@ -9,7 +9,6 @@
 //
 
 import Foundation
-import os
 
 enum PlayOp: Codable, Equatable, Sendable {
     case start(id: UUID, startedAt: Date, player: String? = nil)
@@ -36,7 +35,7 @@ final class PlayOutbox: ObservableObject {
     var sink: PlaySink?
     var retry = Retry.Policy(attempts: 3, baseDelay: 0.5)
     var sleeper: Retry.Sleeper = Retry.taskSleep
-    private let log = Logger(subsystem: "com.jkoch.gtnwchess", category: "play")
+    private let log = Log.play
 
     init(fileURL: URL?, sink: PlaySink?) {
         self.fileURL = fileURL

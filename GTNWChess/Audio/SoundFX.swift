@@ -166,7 +166,10 @@ final class SoundPlayer {
             buffers[fx] = b
         }
         engine.mainMixerNode.outputVolume = volume
-        do { try engine.start(); started = true } catch { started = false }
+        do { try engine.start(); started = true } catch {
+            started = false
+            Log.audio.error("audio engine did not start: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func play(_ fx: SFX) {

@@ -177,10 +177,12 @@ struct ModelPlayer {
                 r.error = (error as? LocalizedError)?.errorDescription ?? "the backend failed"
             }
             r.latencyMs = Int(Date().timeIntervalSince(t0) * 1000)
+            Log.ai.notice("model move ask \(attempt) rejected (\(r.backend, privacy: .public)): \(r.error ?? "", privacy: .private)")
             rejected = r.error
             replies.append(r)
         }
         replies[replies.count - 1].fallback = true
+        Log.ai.notice("model gave no legal move after \(Self.maxAsks) asks; the engine plays it")
         return (nil, replies)
     }
 }

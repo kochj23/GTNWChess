@@ -22,6 +22,9 @@
 - **Accessibility:** VoiceOver labels, values and hints for the 2D squares (selected, legal move, in check), player
   rows, the move list, the battle banner, promotion and the side-panel buttons. **Reduce motion** skips capture
   battles and the cinematic camera, and stops the board flip and banner slide from animating.
+- **Logging:** one `os.Logger` per area (`Log.app/engine/store/lan/play/ai/audio`) for Stockfish retries and
+  fallback, saves set aside, autosave and audio failures, and rejected model moves. `print` is kept only for the
+  CLI's own output, and `--setup-credentials` errors now go to stderr.
 
 ## 1.1.0 (2026-11-12)
 

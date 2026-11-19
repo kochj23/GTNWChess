@@ -674,3 +674,34 @@ final class KeyBindingUnitTests: XCTestCase {
         for k in GameKey.allCases { XCTAssertEqual(KeyBindings.combo(k, in: d), k.defaultCombo) }
     }
 }
+
+/// Diagnostics go through one os.Logger per area; `print` is only the headless CLI's own output.
+final class LoggingUnitTests: XCTestCase {
+    func testOneLoggerPerAreaUnderTheAppSubsystem() {
+        XCTAssertEqual(Log.subsystem, Bundle.main.bundleIdentifier)
+        XCTAssertEqual(Set(Log.categories).count, Log.categories.count)
+    }
+
+    func testPrintOnlyInTheCLIAndLoggersOnlyFromLog() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("GTNWChess")
+        final class Box: @unchecked Sendable { var texts: [String: String] = [:] }
+        let box = Box(), read = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {  // off-thread and time-bound, like the secrets scan
+            let files = (FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?.allObjects ?? [])
+                .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+            for f in files { box.texts[f.lastPathComponent] = try? String(contentsOf: f, encoding: .utf8) }
+            read.signal()
+        }
+        guard read.wait(timeout: .now() + 60) == .success, !box.texts.isEmpty else { throw XCTSkip("sources unreadable from the test runner") }
+        for (name, text) in box.texts {
+            let prints = text.components(separatedBy: "\n").filter { $0.range(of: #"(^|[^A-Za-z_.])(print|debugPrint|NSLog)\("#, options: .regularExpression) != nil }
+            if name == "GTNWChessApp.swift" {
+                XCTAssertEqual(prints.count, 2, "only --setup-credentials and --selftest output: \(prints)")
+                XCTAssertTrue(prints.allSatisfy { $0.contains("credentials") || $0.contains("selftest") }, "\(prints)")
+            } else {
+                XCTAssertEqual(prints, [], name)
+            }
+            if name != "Log.swift" { XCTAssertNil(text.range(of: "Logger(subsystem:"), "\(name) should use Log.<area>") }
+        }
+    }
+}

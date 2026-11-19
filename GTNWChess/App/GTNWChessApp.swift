@@ -176,7 +176,11 @@ enum CLI {
         let a = CommandLine.arguments
         if a.contains("--setup-credentials") {
             do { print("GTNW Chess play-history credentials: \(try PlayCredentials.setupFromCore3())") ; exit(0) }
-            catch { print(error.localizedDescription); exit(1) }
+            catch {
+                Log.app.error("--setup-credentials failed: \(error.localizedDescription, privacy: .public)")
+                FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+                exit(1)
+            }
         }
         if a.contains("--selftest") {
             let p = Position.start

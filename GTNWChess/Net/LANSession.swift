@@ -9,7 +9,6 @@
 
 import Foundation
 import Network
-import os
 
 /// Validates what the other Mac sends against our own rules engine.
 enum LANReferee {
@@ -73,7 +72,7 @@ final class LANSession: ObservableObject {
     var reconnectPolicy = Retry.Policy(attempts: 8, baseDelay: 0.5, multiplier: 2)
     var sleeper: Retry.Sleeper = Retry.taskSleep
     private let queue = DispatchQueue(label: "com.jkoch.gtnwchess.lan")
-    private let log = Logger(subsystem: "com.jkoch.gtnwchess", category: "lan")
+    private let log = Log.lan
 
     /// Delivered on the main actor.
     var onMessage: (LANMessage) -> Void = { _ in }
