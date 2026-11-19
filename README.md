@@ -414,6 +414,23 @@ checks the rules engine and asks the bundled Stockfish for a move. It exits 0 wh
 hardened runtime off for the Debug test host, so an integration test re-signs a copy of the app with it and runs
 `--selftest`.
 
+### Release
+
+```sh
+tools/release.sh --dry-run    # archive, export, check, sign ad hoc and build the DMG in a temp folder; copies nothing
+tools/release.sh              # the same, then copies the DMG to /Volumes/Data/xcode/binaries and /Volumes/NAS/binaries
+tools/release.sh --notarize   # Developer ID signing + notarization + stapling (off by default)
+```
+
+The script archives the Release build and checks the bundle before it signs anything. Stockfish must be present,
+arm64 and Stockfish 19, and its SHA-256 must match `scripts/stockfish.sha256`. Its GPL files must be there too. The
+bundle must not contain any certificate, key or credential file, PEM block or known API-key prefix. The two Nova Games
+CA certificates are left out of the release, so a released build has no Nova Games play history and does not offer
+the sign-in. After signing (hardened runtime) it runs `--selftest`, builds the DMG, mounts it and checks it again.
+`--notarize` reads `DEVELOPER_ID` (default: the first Developer ID Application identity in your keychain) and
+`NOTARY_PROFILE`, a `notarytool store-credentials` profile, so the credentials stay in the Keychain. The script
+never publishes a GitHub release.
+
 ## Tests
 
 ```sh
@@ -430,7 +447,7 @@ The suites cover all seven categories:
 | Category | What it covers |
 |---|---|
 | Unit | Model-move validator (SAN, UCI, prose, illegal, empty), model player info, prompts, matchup/fallbacks summary, old-save decoding, save-format migration (format 1 → current), newer save formats refused, SplitMix64, seed recording, personality table, chat gate, Perft (6 positions), FEN, SAN, castling, en passant, promotion, every draw rule, PGN, openings, win%/accuracy/classification, UCI parsing, battle plans, cast, coach facts, AI validator, clocks, recorder payloads, LAN codec, referee, consent form |
-| Security | Keychain naming, no key over http, no shipped keys, UCI/FEN/PGN injection and size limits, LAN frame limits, PSK per code, referee rejects out-of-turn, illegal and stale moves, site sign-in validation, Origin/CSRF, consent OFF never sends a name, a source scan for secrets and household names, bundled CAs, oversized and foreign saves rejected before parsing, a cloud model side's key only in the https Authorization header and never in events, summaries or the feed, clipped reply excerpts |
+| Security | Keychain naming, no key over http, no shipped keys, UCI/FEN/PGN injection and size limits, LAN frame limits, PSK per code, referee rejects out-of-turn, illegal and stale moves, site sign-in validation, Origin/CSRF, consent OFF never sends a name, a source scan for secrets and household names, bundled CAs, a build without the CAs offers no play history, oversized and foreign saves rejected before parsing, a cloud model side's key only in the https Authorization header and never in events, summaries or the feed, clipped reply excerpts |
 | Performance | Perft budget, move generation throughput, PGN round trip, coach facts per move, engine response, synth, scene sync, summary size, move validator on long rambling replies |
 | Retry | Backoff maths, outbox (transient kept, permanent dropped, order, persistence, cap), engine retry → fallback, illegal engine reply, AI retry and fallback, LAN reconnect giving up cleanly, model invalid-then-valid re-ask with the error, 3 invalid answers → engine fallback, backend down |
 | Integration | Real Stockfish (skipped if absent), the bundled Stockfish launched from a copy of the app re-signed with the hardened runtime (`--selftest`), TLS-PSK LAN on loopback incl. wrong code and reconnect, play history against a throwaway TLS Postgres 17 with NovaGames `play.sql` (RLS, no DELETE, idempotent writes), a model-vs-model session through the outbox to a sink and to Postgres (matchup, fallbacks, `model_reply` events, contiguous seq) |

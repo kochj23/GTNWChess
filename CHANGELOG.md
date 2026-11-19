@@ -11,6 +11,11 @@
   earlier cannot read format 2 and will still overwrite it.
 - **Hardened runtime on**, with no entitlements. Stockfish still runs as a subprocess. `--selftest` now also gets a
   legal move from the bundled Stockfish.
+- **`tools/release.sh`:** archive, export and bundle checks (Stockfish SHA-256 against `scripts/stockfish.sha256`,
+  licence files, no certificates, keys or credentials), ad hoc or `--notarize` (Developer ID + notarization, off by
+  default), and a DMG copied to both binaries folders. `--dry-run` does all of it in a temp folder and copies
+  nothing. Releases leave out the Nova Games CA certificates, and a build without them no longer offers the Nova Games
+  sign-in.
 
 ## 1.1.0 (2026-11-12)
 

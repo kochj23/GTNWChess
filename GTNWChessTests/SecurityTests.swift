@@ -163,6 +163,15 @@ final class SecurityTests: XCTestCase {
         XCTAssertTrue(PlayCredentials.isPlausible("Xy7_long-enough"))
     }
 
+    /// tools/release.sh leaves both Nova Games CA certificates out of the release, so that build must not offer a
+    /// sign-in or pick a play-history sink it cannot verify. The test bundle stands in for such a build (it has no CA).
+    func testBuildWithoutBundledCAsHasNoPlayHistoryServer() {
+        XCTAssertTrue(AppLaunch.hasPlayHistoryServer(.main), "the Debug app still bundles the CAs")
+        let noCA = Bundle(for: SecurityTests.self)
+        XCTAssertTrue(GamesSiteClient.bundledCA(noCA).isEmpty)
+        XCTAssertFalse(AppLaunch.hasPlayHistoryServer(noCA))
+    }
+
     /// No API keys, private keys, passwords or household names in the shipped sources.
     func testSourcesHoldNoSecretsOrHouseholdNames() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("GTNWChess")

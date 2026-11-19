@@ -149,6 +149,7 @@ final class GameController: ObservableObject {
     /// PG direct on Little Mister's Macs (role password in the login keychain), else the site API when signed in.
     static func chooseSink(site: GamesSiteClient) -> PlaySink? {
         if RuntimeEnv.underXCTest || RuntimeEnv.demo { return nil }
+        if !AppLaunch.hasPlayHistoryServer() { return nil }
         if let pg = PGPlaySink.makeDefault() { return pg }
         return SitePlaySink(client: site)
     }

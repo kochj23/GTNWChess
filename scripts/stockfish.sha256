@@ -1,0 +1,3 @@
+4f75fb47deaa8a29ddaaae206ab5edc6ebdfa9441e0e0fca3f15b95d9dae1c0f  stockfish
+# Stockfish 19, arm64, as Homebrew ships it (bottle, linker ad hoc signed), before tools/release.sh re-signs it.
+# Update this line on purpose when you upgrade the engine: shasum -a 256 "$(brew --prefix stockfish)/bin/stockfish"

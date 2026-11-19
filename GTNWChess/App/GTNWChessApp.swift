@@ -21,8 +21,15 @@ enum AppLaunch {
 
     static func shouldOfferSignIn(_ c: GameController) -> Bool {
         guard !RuntimeEnv.underXCTest, !RuntimeEnv.demo, !CommandLine.arguments.contains("--no-signin") else { return false }
+        guard hasPlayHistoryServer() else { return false }
         if c.outbox.sink is PGPlaySink { return false }
         return !c.site.isConfigured && !UserDefaults.standard.bool(forKey: Prefs.siteSkipped)
+    }
+
+    /// A release from tools/release.sh ships without the Nova Games CA certificates, so it has no play-history server
+    /// to sign in to.
+    nonisolated static func hasPlayHistoryServer(_ bundle: Bundle = .main) -> Bool {
+        !GamesSiteClient.bundledCA(bundle).isEmpty || !PGConfig.bundledCA(bundle).isEmpty
     }
 
     /// Launch arguments used for screenshots, QA and the two-instance LAN test.
