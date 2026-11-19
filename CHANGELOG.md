@@ -9,6 +9,8 @@
   is rejected; either way the file is moved aside to `current-game.unreadable-<date>.json` and an alert says where.
   Before, any version mismatch was silently ignored and then overwritten by the next autosave. Note: 1.1.0 and
   earlier cannot read format 2 and will still overwrite it.
+- **Hardened runtime on**, with no entitlements. Stockfish still runs as a subprocess. `--selftest` now also gets a
+  legal move from the bundled Stockfish.
 
 ## 1.1.0 (2026-11-12)
 

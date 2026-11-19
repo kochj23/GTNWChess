@@ -408,6 +408,12 @@ xcodebuild -project GTNWChess.xcodeproj -scheme GTNWChess -configuration Release
 The post-build script `scripts/bundle-stockfish.sh` copies the engine to `Contents/MacOS/stockfish`. Its licence, the
 authors list and the source offer go to `Contents/Resources/Stockfish/`. Release builds compile with zero warnings.
 
+The app is signed with the **hardened runtime** and needs no entitlements: Stockfish runs as a separate,
+separately signed process, so nothing is loaded into the app. `"GTNW Chess.app/Contents/MacOS/GTNW Chess" --selftest`
+checks the rules engine and asks the bundled Stockfish for a move. It exits 0 when both work. Xcode leaves the
+hardened runtime off for the Debug test host, so an integration test re-signs a copy of the app with it and runs
+`--selftest`.
+
 ## Tests
 
 ```sh
@@ -427,7 +433,7 @@ The suites cover all seven categories:
 | Security | Keychain naming, no key over http, no shipped keys, UCI/FEN/PGN injection and size limits, LAN frame limits, PSK per code, referee rejects out-of-turn, illegal and stale moves, site sign-in validation, Origin/CSRF, consent OFF never sends a name, a source scan for secrets and household names, bundled CAs, oversized and foreign saves rejected before parsing, a cloud model side's key only in the https Authorization header and never in events, summaries or the feed, clipped reply excerpts |
 | Performance | Perft budget, move generation throughput, PGN round trip, coach facts per move, engine response, synth, scene sync, summary size, move validator on long rambling replies |
 | Retry | Backoff maths, outbox (transient kept, permanent dropped, order, persistence, cap), engine retry → fallback, illegal engine reply, AI retry and fallback, LAN reconnect giving up cleanly, model invalid-then-valid re-ask with the error, 3 invalid answers → engine fallback, backend down |
-| Integration | Real Stockfish (skipped if absent), TLS-PSK LAN on loopback incl. wrong code and reconnect, play history against a throwaway TLS Postgres 17 with NovaGames `play.sql` (RLS, no DELETE, idempotent writes), a model-vs-model session through the outbox to a sink and to Postgres (matchup, fallbacks, `model_reply` events, contiguous seq) |
+| Integration | Real Stockfish (skipped if absent), the bundled Stockfish launched from a copy of the app re-signed with the hardened runtime (`--selftest`), TLS-PSK LAN on loopback incl. wrong code and reconnect, play history against a throwaway TLS Postgres 17 with NovaGames `play.sql` (RLS, no DELETE, idempotent writes), a model-vs-model session through the outbox to a sink and to Postgres (matchup, fallbacks, `model_reply` events, contiguous seq) |
 | Functional | Hot-seat and vs-Nova games to the end with history, takeback, draws, resignation, promotion, save/resume, an old save migrating and resuming, a newer or damaged save kept aside (byte for byte) with a notice, PGN study mode, engine vs engine, AI narration with fallback, two-controller LAN games (only the host writes), Watch engine vs model with recorded replies, fallback counting, take over against a model |
 | Frame / UI state | 32 piece nodes, node reuse, highlights, camera limits, battle start/skip-once/run-to-end under an offscreen renderer, non-blank offscreen frames, 2D/3D and flip state, Watch spectator state (model names, matchup, thinking line, pause) |
 

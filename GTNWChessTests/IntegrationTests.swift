@@ -56,6 +56,48 @@ final class StockfishIntegrationTests: XCTestCase {
         XCTAssertTrue(a.engine.lowercased().contains("stockfish"))
         await svc.shutdown()
     }
+
+    /// Release builds sign with the hardened runtime (Xcode leaves it off for the Debug test host). A copy of this app
+    /// re-signed with the hardened runtime must still launch its bundled Stockfish and get a legal move from it
+    /// (`--selftest`). The app needs no entitlement for this: spawning a separately signed executable is not loading
+    /// code into the app. The copy here gets `disable-library-validation` only because a Debug build splits its code
+    /// into an ad hoc `GTNW Chess.debug.dylib`; tools/release.sh runs the same `--selftest` on the Release app with none.
+    func testBundledStockfishRunsUnderHardenedRuntime() throws {
+        guard Bundle.main.url(forAuxiliaryExecutable: "stockfish") != nil else { throw XCTSkip("Stockfish not bundled") }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("hr-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let app = dir.appendingPathComponent(Bundle.main.bundleURL.lastPathComponent)
+        XCTAssertEqual(try run("/usr/bin/ditto", [Bundle.main.bundleURL.path, app.path]).status, 0)
+        try? FileManager.default.removeItem(at: app.appendingPathComponent("Contents/PlugIns"))  // the injected test bundle
+        let macos = app.appendingPathComponent("Contents/MacOS")
+        for f in try FileManager.default.contentsOfDirectory(atPath: macos.path) where f != Bundle.main.bundleURL.deletingPathExtension().lastPathComponent {
+            XCTAssertEqual(try run("/usr/bin/codesign", ["--force", "-o", "runtime", "-s", "-", macos.appendingPathComponent(f).path]).status, 0, f)
+        }
+        let ent = dir.appendingPathComponent("debug-dylib.entitlements")
+        try Data(#"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>com.apple.security.cs.disable-library-validation</key><true/></dict></plist>"#.utf8).write(to: ent)
+        XCTAssertEqual(try run("/usr/bin/codesign", ["--force", "-o", "runtime", "--entitlements", ent.path, "-s", "-", app.path]).status, 0)
+        let info = try run("/usr/bin/codesign", ["-dv", app.path])
+        XCTAssertTrue(info.output.contains("runtime"), info.output)
+        let exe = macos.appendingPathComponent(Bundle.main.bundleURL.deletingPathExtension().lastPathComponent)
+        let r = try run(exe.path, ["--selftest"])
+        XCTAssertEqual(r.status, 0, r.output)
+        XCTAssertTrue(r.output.contains("stockfish=\(macos.appendingPathComponent("stockfish").path)"), r.output)
+        XCTAssertFalse(r.output.contains("bestmove=none"), r.output)
+    }
+
+    private func run(_ path: String, _ args: [String]) throws -> (status: Int32, output: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = pipe
+        try p.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return (p.terminationStatus, String(decoding: data, as: UTF8.self))
+    }
 }
 
 @MainActor

@@ -164,9 +164,27 @@ enum CLI {
         }
         if a.contains("--selftest") {
             let p = Position.start
-            let ok = p.perft(3) == 8902 && UCIEngine.locate() != nil
-            print("selftest perft(3)=\(p.perft(3)) stockfish=\(UCIEngine.locate()?.path ?? "missing")")
+            let move = UCIEngine.locate().flatMap(selftestMove)
+            let ok = p.perft(3) == 8902 && move != nil
+            print("selftest perft(3)=\(p.perft(3)) stockfish=\(UCIEngine.locate()?.path ?? "missing") bestmove=\(move ?? "none")")
             exit(ok ? 0 : 1)
         }
     }
+
+    /// Launches Stockfish as a subprocess and asks for one legal move (proves the engine runs under this signature).
+    static func selftestMove(_ url: URL) -> String? {
+        let done = DispatchSemaphore(value: 0)
+        let box = SelftestBox()
+        Task.detached {
+            let e = UCIEngine(url: url, timeout: 15)
+            box.move = try? await e.bestMove(fen: Position.startFEN, moves: [], level: .cadet)
+            await e.shutdown()
+            done.signal()
+        }
+        guard done.wait(timeout: .now() + 20) == .success, let m = box.move else { return nil }
+        var g = Game()
+        return (try? g.play(uci: m)) != nil ? m : nil
+    }
 }
+
+private final class SelftestBox: @unchecked Sendable { var move: String? }
